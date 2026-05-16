@@ -1,18 +1,22 @@
 # Single-host production deployment.
-# Usage:
+#
+# Local usage:
 #   cp .env.example .env   # then fill in real values
-#   docker compose up -d --build
+#   docker compose --env-file .env up -d --build
 #   docker compose exec bot npm run seed   # one-shot, idempotent
+#
+# Coolify usage:
+#   Coolify injects all env vars from its UI directly into containers — no .env
+#   file in the build context. Don't add `env_file: .env` here; it makes compose
+#   fail when the file is absent. The `environment:` block below sets only
+#   internals (Mongo host, port) — everything else comes from the host env.
 services:
   mongo:
     image: mongo:7
-    container_name: alyona-mongo
     restart: unless-stopped
     command: ["mongod", "--bind_ip_all", "--quiet"]
     volumes:
-      - mongo_data:/data/db
-    networks:
-      - app
+      - mongo-data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
@@ -24,20 +28,27 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: alyona-bot
     restart: unless-stopped
-    env_file: .env
     environment:
+      # Internal wiring — keep these fixed.
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB_NAME: alyona_bot
       PORT: "3000"
+      # Pass through host env (Coolify injects each of these).
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      BOT_TOKEN: ${BOT_TOKEN:?BOT_TOKEN is required}
+      OWNER_TG_IDS: ${OWNER_TG_IDS:?OWNER_TG_IDS is required}
+      LIQPAY_PROVIDER_TOKEN: ${LIQPAY_PROVIDER_TOKEN:-}
+      LIQPAY_TEST_MODE: ${LIQPAY_TEST_MODE:-true}
+      MASTER_KEY: ${MASTER_KEY:?MASTER_KEY is required (64 hex chars)}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      NBU_API_URL: ${NBU_API_URL:-https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=USD&json}
     depends_on:
       mongo:
         condition: service_healthy
-    networks:
-      - app
-    ports:
-      - "127.0.0.1:3000:3000"   # bind to loopback; expose via reverse proxy if needed
+    expose:
+      - "3000"
     logging:
       driver: json-file
       options:
@@ -47,22 +58,16 @@ services:
   # Daily mongodump → ./backups, rotates to keep last 7.
   backup:
     image: mongo:7
-    container_name: alyona-backup
     restart: unless-stopped
     depends_on:
       mongo:
         condition: service_healthy
     volumes:
-      - ./backups:/backups
+      - backups:/backups
       - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
-    networks:
-      - app
     entrypoint: ["/bin/sh", "-c"]
     command: ["chmod +x /usr/local/bin/backup.sh && /usr/local/bin/backup.sh loop"]
 
-networks:
-  app:
-    driver: bridge
-
 volumes:
-  mongo_data:
+  mongo-data:
+  backups:
