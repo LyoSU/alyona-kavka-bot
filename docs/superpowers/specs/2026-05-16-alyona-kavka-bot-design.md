@@ -911,8 +911,11 @@ CMD ["bundle.cjs"]
 
 ### Резервне копіювання
 
-- Mongo backup: `mongodump` cron на хості, S3-compatible upload (опціонально)
-- На старті — daily snapshot volume, 7 днів retention
+- **Daily cron на хості:** `mongodump --gzip --archive=/var/backups/alyona-mongo/dump-$(date +%F).archive.gz`
+- **Ротація:** 7 днів (старіші файли видаляються; `find /var/backups/alyona-mongo -mtime +7 -delete`)
+- **Volume Mongo** — named (`alyona-mongo-data`), `docker compose down` не видаляє дані
+- **Restore:** `gunzip -c /var/backups/.../dump-YYYY-MM-DD.archive.gz | docker compose exec -T mongo mongorestore --archive --drop`
+- На етапі росту — додати upload в зовнішнє сховище (S3/Backblaze через rclone), наразі бекап лежить на тому ж сервері
 
 ---
 
