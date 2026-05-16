@@ -3,6 +3,7 @@ import { registerContentActions } from './content';
 import { registerLessonsActions } from './lessons-admin';
 import { registerProductsActions } from './products-admin';
 import { registerSettingsActions } from './settings-admin';
+import { registerStatsActions } from './stats-admin';
 import { registerStubActions } from './stubs';
 import { registerTeamActions } from './team-admin';
 
@@ -17,5 +18,6 @@ export function registerAllAdminActions(): void {
   registerTeamActions();
   registerSettingsActions();
   registerBroadcastsActions();
+  registerStatsActions();
   registerStubActions();
 }

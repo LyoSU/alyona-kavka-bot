@@ -1,4 +1,5 @@
 import { run } from '@grammyjs/runner';
+import { publishCommands } from '@/bot/commands';
 import { handleAdmin } from '@/bot/handlers/admin/menu';
 import { registerAllAdminActions } from '@/bot/handlers/admin/register';
 import { handleAdminReply } from '@/bot/handlers/admin-reply';
@@ -6,6 +7,13 @@ import { handleCallback } from '@/bot/handlers/callback-router';
 import { handleChatsShared, handleInitAdminGroup } from '@/bot/handlers/init-admin-group';
 import { handleMyLessons } from '@/bot/handlers/lessons';
 import { handlePlainMessage, handleSupportButton } from '@/bot/handlers/plain-message';
+import {
+  handleAbout,
+  handleDeleteMyData,
+  handleHelp,
+  handlePause,
+  handleResume,
+} from '@/bot/handlers/privacy';
 import { handleStart } from '@/bot/handlers/start';
 import { createBot } from '@/bot/index';
 import { MAIN_REPLY_BTN_LESSONS, MAIN_REPLY_BTN_SUPPORT } from '@/bot/keyboards/main-reply';
@@ -38,6 +46,11 @@ async function bootstrap() {
 
   bot.command('start', handleStart);
   bot.command('lessons', handleMyLessons);
+  bot.command('pause', handlePause);
+  bot.command('resume', handleResume);
+  bot.command('delete_my_data', handleDeleteMyData);
+  bot.command('help', handleHelp);
+  bot.command('about', handleAbout);
   bot.command('admin', handleAdmin);
   bot.command('init_admin_group', handleInitAdminGroup);
   bot.hears(MAIN_REPLY_BTN_LESSONS, handleMyLessons);
@@ -64,6 +77,7 @@ async function bootstrap() {
 
   // Ensure polling mode (drops any leftover webhook config)
   await bot.api.deleteWebhook({ drop_pending_updates: false });
+  await publishCommands(bot, env.OWNER_TG_IDS);
 
   const { stop: httpStop } = startHealth(env.PORT);
   const runner = run(bot);

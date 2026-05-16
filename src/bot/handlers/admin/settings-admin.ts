@@ -1,6 +1,7 @@
 import { createConversation } from '@grammyjs/conversations';
 import { InlineKeyboard } from 'grammy';
 import type { BotContext } from '@/bot/context';
+import { handleInitAdminGroup } from '@/bot/handlers/init-admin-group';
 import { loadEnv } from '@/config/env';
 import { getCollections } from '@/db/client';
 import { getCachedUsdRate } from '@/domain/payments/exchange-rate';
@@ -61,10 +62,13 @@ async function showSettings(ctx: BotContext): Promise<void> {
     .text('🔒 Privacy URL', 'a:settings:edit:privacy_policy_url')
     .row()
     .text('📚 Канал професій', 'a:settings:edit:professions_channel_url')
-    .row()
-    .text('🧹 Скинути адмін-групу', 'a:settings:reset_group')
-    .row()
-    .text('⬅️ Адмін-меню', 'a:home');
+    .row();
+  if (s?.admin_group_chat_id) {
+    kb.text('🧹 Скинути адмін-групу', 'a:settings:reset_group').row();
+  } else {
+    kb.text('🔗 Підключити адмін-групу', 'a:settings:link_group').row();
+  }
+  kb.text('⬅️ Адмін-меню', 'a:home');
 
   try {
     await ctx.editMessageText(text, { reply_markup: kb, parse_mode: 'HTML' });
@@ -157,6 +161,10 @@ export function registerSettingsActions(): void {
       }
       if (rest === 'reset_group') {
         await resetAdminGroup(ctx);
+        return;
+      }
+      if (rest === 'link_group') {
+        await handleInitAdminGroup(ctx);
         return;
       }
       if (rest.startsWith('edit:')) {

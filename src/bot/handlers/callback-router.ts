@@ -31,8 +31,14 @@ export async function handleCallback(ctx: BotContext): Promise<void> {
       ctx.session.current_node_id = parsed.node_id;
       await getCollections().users.updateOne(
         { tg_id: tgId },
-        { $set: { current_node_id: parsed.node_id } },
+        { $set: { current_node_id: parsed.node_id, last_seen_at: new Date() } },
       );
+      await getCollections().events.insertOne({
+        user_tg_id: tgId,
+        type: 'node_visited',
+        payload: { node_id: parsed.node_id, from: prev },
+        at: new Date(),
+      });
       const r = await renderNode(ctx.api, chatId, parsed.node_id);
       if (!r.ok) logger().warn({ node_id: parsed.node_id }, 'goto_node: node not found');
       return;
