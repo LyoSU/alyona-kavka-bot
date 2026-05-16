@@ -6,6 +6,7 @@ import { createBot } from '@/bot/index';
 import { MAIN_REPLY_BTN_LESSONS } from '@/bot/keyboards/main-reply';
 import { loadEnv } from '@/config/env';
 import { initDb } from '@/db/client';
+import { startSweeper } from '@/domain/delivery/sweeper';
 import { handlePreCheckout, handleSuccessfulPayment } from '@/domain/payments/handlers';
 import { startHealth } from '@/http/server';
 import { logger } from '@/lib/logger';
@@ -41,7 +42,14 @@ async function bootstrap() {
 
   const { stop: httpStop } = startHealth(env.PORT);
   const runner = run(bot);
-  installShutdown({ runner, httpStop });
+  const sweeper = startSweeper(bot.api);
+  installShutdown({
+    runner,
+    httpStop: async () => {
+      sweeper.stop();
+      await httpStop();
+    },
+  });
 
   logger().info({ port: env.PORT }, 'bot started (long-polling)');
 }
