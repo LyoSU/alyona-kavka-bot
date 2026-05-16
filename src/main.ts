@@ -110,29 +110,33 @@ async function bootstrap() {
 
   logger().info('handlers registered');
 
-  // Ensure polling mode (drops any leftover webhook config). Wrap with a
-  // hard timeout: TG outages must not block startup; the runner can poll
-  // even if a stale webhook is set (it'll get cleared on first long-poll).
-  try {
-    await Promise.race([
-      bot.api.deleteWebhook({ drop_pending_updates: false }),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('deleteWebhook timeout')), 5000)),
-    ]);
-    logger().info('webhook cleared');
-  } catch (err) {
-    logger().warn({ err }, 'deleteWebhook failed/timed out — continuing');
-  }
-  // publishCommands has its own try/catch; race it with a deadline so it can't
-  // block bootstrap if TG misbehaves.
-  await Promise.race([
-    publishCommands(bot, env.OWNER_TG_IDS),
-    new Promise((resolve) => setTimeout(resolve, 5000)),
-  ]);
-
+  // Start polling IMMEDIATELY. Webhook clearing and setMyCommands are
+  // best-effort and must never block reception of updates.
   logger().info('starting http + runner');
   const { stop: httpStop } = startHealth(env.PORT);
   const runner = run(bot);
   logger().info('runner started');
+
+  // Background: clean any stale webhook + publish slash-command menus.
+  (async () => {
+    try {
+      await Promise.race([
+        bot.api.deleteWebhook({ drop_pending_updates: false }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('deleteWebhook timeout')), 10_000)),
+      ]);
+      logger().info('webhook cleared');
+    } catch (err) {
+      logger().warn({ err }, 'deleteWebhook failed — runner will poll anyway');
+    }
+    try {
+      await Promise.race([
+        publishCommands(bot, env.OWNER_TG_IDS),
+        new Promise((resolve) => setTimeout(resolve, 10_000)),
+      ]);
+    } catch (err) {
+      logger().warn({ err }, 'publishCommands deferred');
+    }
+  })();
   const sweeper = startSweeper(bot.api);
   const broadcastTicker = startBroadcastTicker(bot.api);
   const reconcile = startReconcileLoop();
