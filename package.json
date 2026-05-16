@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "start": "node dist/bundle.cjs",
+    "start": "node dist/main.cjs",
     "dev": "tsx watch src/main.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
