@@ -1,0 +1,68 @@
+# Single-host production deployment.
+# Usage:
+#   cp .env.example .env   # then fill in real values
+#   docker compose up -d --build
+#   docker compose exec bot npm run seed   # one-shot, idempotent
+services:
+  mongo:
+    image: mongo:7
+    container_name: alyona-mongo
+    restart: unless-stopped
+    command: ["mongod", "--bind_ip_all", "--quiet"]
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alyona-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB_NAME: alyona_bot
+      PORT: "3000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - app
+    ports:
+      - "127.0.0.1:3000:3000"   # bind to loopback; expose via reverse proxy if needed
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # Daily mongodump → ./backups, rotates to keep last 7.
+  backup:
+    image: mongo:7
+    container_name: alyona-backup
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+    networks:
+      - app
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chmod +x /usr/local/bin/backup.sh && /usr/local/bin/backup.sh loop"]
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  mongo_data:
