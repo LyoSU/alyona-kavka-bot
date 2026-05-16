@@ -22,16 +22,21 @@ const SEG_KEYS: SegmentKey[] = [
   'admins',
 ];
 
+const STATUS_LABEL: Record<BroadcastDoc['status'], { emoji: string; label: string }> = {
+  draft: { emoji: '📝', label: 'Чернетка' },
+  running: { emoji: '▶️', label: 'Іде' },
+  paused: { emoji: '⏸', label: 'На паузі' },
+  done: { emoji: '✅', label: 'Завершено' },
+  cancelled: { emoji: '🚫', label: 'Скасовано' },
+};
+
 function statusEmoji(s: BroadcastDoc['status']): string {
-  return s === 'running'
-    ? '▶️'
-    : s === 'paused'
-      ? '⏸'
-      : s === 'done'
-        ? '✅'
-        : s === 'cancelled'
-          ? '🚫'
-          : '📝';
+  return STATUS_LABEL[s]?.emoji ?? '📝';
+}
+
+function statusFull(s: BroadcastDoc['status']): string {
+  const it = STATUS_LABEL[s];
+  return it ? `${it.emoji} ${it.label}` : '📝';
 }
 
 async function listBroadcasts(ctx: BotContext): Promise<void> {
@@ -43,10 +48,11 @@ async function listBroadcasts(ctx: BotContext): Promise<void> {
   const kb = new InlineKeyboard();
   kb.text('📣 Створити нову', 'a:broadcasts:new').row();
   for (const b of docs) {
-    const seg = (b.segment_filter.segment as string | undefined) ?? '—';
+    const segKey = b.segment_filter.segment as SegmentKey | undefined;
+    const segLabel = segKey ? (SEGMENT_LABELS[segKey] ?? segKey) : '—';
     const progress = `${b.sent_count}/${b.total_target}`;
     kb.text(
-      `${statusEmoji(b.status)} ${seg} · ${progress}`,
+      `${statusEmoji(b.status)} ${segLabel} · ${progress}`,
       `a:broadcasts:b:${String(b._id)}`,
     ).row();
   }
@@ -78,7 +84,7 @@ async function showBroadcast(ctx: BotContext, idStr: string): Promise<void> {
   const text =
     `📣 <b>Розсилка</b>\n` +
     `Сегмент: ${escapeHtml(segLabel)}\n` +
-    `Статус: ${statusEmoji(b.status)} ${escapeHtml(b.status)}\n` +
+    `Статус: ${escapeHtml(statusFull(b.status))}\n` +
     `Прогрес: ${b.sent_count}/${total} (${pct}%) · помилок: ${b.failed_count}\n\n` +
     `${italic('Превʼю:')}\n${escapeHtml(preview)}`;
 

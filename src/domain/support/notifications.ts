@@ -1,5 +1,6 @@
 import type { Api } from 'grammy';
 import { getCollections } from '@/db/client';
+import { nodeLabel } from '@/domain/funnel/labels';
 import { bold, code, escapeHtml } from '@/lib/html';
 
 function fmtNow(): string {
@@ -82,7 +83,7 @@ export async function notifyFunnelStep(
   });
   const t = await getTopic(user_tg_id);
   if (!t) return;
-  await api.sendMessage(t.chat_id, `🔵 Дійшов до: ${code(node_id)}`, {
+  await api.sendMessage(t.chat_id, `🔵 Дійшов до: ${escapeHtml(nodeLabel(node_id))}`, {
     message_thread_id: t.thread_id,
     parse_mode: 'HTML',
   });

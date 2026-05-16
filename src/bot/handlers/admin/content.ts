@@ -2,6 +2,7 @@ import { createConversation } from '@grammyjs/conversations';
 import { InlineKeyboard } from 'grammy';
 import type { BotContext } from '@/bot/context';
 import { getCollections } from '@/db/client';
+import { nodeLabel } from '@/domain/funnel/labels';
 import { code, escapeHtml, pre } from '@/lib/html';
 import { logger } from '@/lib/logger';
 import { registerAdminAction } from './router';
@@ -13,7 +14,7 @@ type Conv = Parameters<Parameters<typeof createConversation<BotContext, BotConte
 function pageKeyboard(nodes: string[], page: number): InlineKeyboard {
   const kb = new InlineKeyboard();
   const slice = nodes.slice(page * PAGE, page * PAGE + PAGE);
-  for (const id of slice) kb.text(id, `a:content:n:${id}`).row();
+  for (const id of slice) kb.text(nodeLabel(id), `a:content:n:${id}`).row();
   const totalPages = Math.ceil(nodes.length / PAGE);
   if (totalPages > 1) {
     if (page > 0) kb.text('◀️', `a:content:page:${page - 1}`);
@@ -29,8 +30,10 @@ async function listNodes(ctx: BotContext, page = 0): Promise<void> {
   const docs = await getCollections()
     .flow_nodes.find({}, { projection: { node_id: 1 } })
     .toArray();
-  const ids = docs.map((d) => d.node_id as string).sort();
-  const text = `📝 <b>Контент воронки</b>\nВибери ноду (${ids.length}):`;
+  const ids = docs
+    .map((d) => d.node_id as string)
+    .sort((a, b) => nodeLabel(a).localeCompare(nodeLabel(b), 'uk'));
+  const text = `📝 <b>Контент воронки</b>\nОбери крок (${ids.length}):`;
   const kb = pageKeyboard(ids, page);
   try {
     await ctx.editMessageText(text, { reply_markup: kb, parse_mode: 'HTML' });
@@ -63,7 +66,9 @@ async function showNode(ctx: BotContext, node_id: string): Promise<void> {
     await ctx.reply(`Ноду «${escapeHtml(node_id)}» не знайдено`, { parse_mode: 'HTML' });
     return;
   }
-  const text = `🧩 <b>Нода:</b> ${code(node_id)}`;
+  const text =
+    `🧩 <b>${escapeHtml(nodeLabel(node_id))}</b>\n` +
+    `<i>технічний ID:</i> ${code(node_id)}`;
   const kb = nodeKeyboard(
     doc as unknown as {
       node_id: string;

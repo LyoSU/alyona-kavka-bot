@@ -1,4 +1,5 @@
 import type { UserDoc } from '@/db/schemas';
+import { nodeLabel } from '@/domain/funnel/labels';
 import { bold, code, escapeHtml } from '@/lib/html';
 
 function fmtDate(d: Date): string {
@@ -14,7 +15,7 @@ export function renderCard(user: UserDoc): string {
       : user.segment === 'growing'
         ? 'Хоче рости'
         : 'не визначено';
-  const node = user.current_node_id ?? '—';
+  const node = user.current_node_id ? nodeLabel(user.current_node_id) : '—';
   return [
     `👤 ${bold(fullName)}`,
     `📱 ${escapeHtml(at)}`,
@@ -23,7 +24,7 @@ export function renderCard(user: UserDoc): string {
     `🌐 ${escapeHtml(user.language_code)}`,
     '──────────────',
     '📊 Воронка',
-    `└─ Зараз на: ${code(node)}`,
+    `└─ Зараз на: ${escapeHtml(node)}`,
     `🎯 Сегмент: ${escapeHtml(seg)}`,
     '',
     `💰 Купівлі: ${user.purchases_count} (${user.total_spent_uah} ₴)`,

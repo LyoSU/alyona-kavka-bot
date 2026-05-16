@@ -60,7 +60,10 @@ async function showAdmin(ctx: BotContext, target_tg_id: number): Promise<void> {
   }
   const name = `${u.first_name}${u.last_name ? ` ${u.last_name}` : ''}`;
   const uname = u.username ? `@${u.username}` : '';
-  const text = `👤 ${bold(name)} ${escapeHtml(uname)}\nID: ${code(u.tg_id)}\n\nДозволи:`;
+  const text =
+    `👤 ${bold(name)} ${escapeHtml(uname)}\n\n` +
+    `Дозволи (тапни щоб увімкнути/вимкнути):\n\n` +
+    `<i>службовий ID:</i> ${code(u.tg_id)}`;
   const kb = permsKeyboard(u);
   try {
     await ctx.editMessageText(text, { reply_markup: kb, parse_mode: 'HTML' });

@@ -3,7 +3,9 @@ import { loadEnv } from '@/config/env';
 import { getCollections } from '@/db/client';
 import { parse } from '@/domain/funnel/callbacks';
 import { renderNode } from '@/domain/funnel/engine';
+import { getNode } from '@/domain/funnel/repo';
 import { sendProductInvoice } from '@/domain/payments/invoice';
+import { notifyFunnelStep } from '@/domain/support/notifications';
 import { logger } from '@/lib/logger';
 import { handleAdminCallback } from './admin/router';
 import { handleLessonPlay, handleLessonsProduct, handleMyLessons } from './lessons';
@@ -40,7 +42,16 @@ export async function handleCallback(ctx: BotContext): Promise<void> {
         at: new Date(),
       });
       const r = await renderNode(ctx.api, chatId, parsed.node_id);
-      if (!r.ok) logger().warn({ node_id: parsed.node_id }, 'goto_node: node not found');
+      if (!r.ok) {
+        logger().warn({ node_id: parsed.node_id }, 'goto_node: node not found');
+      } else {
+        // Notify admins for "money-near" steps (any node with a buy button).
+        const node = await getNode(parsed.node_id);
+        const hasBuy = node?.buttons.some((b) => b.action === 'buy') ?? false;
+        if (hasBuy) {
+          notifyFunnelStep(ctx.api, tgId, parsed.node_id).catch(() => undefined);
+        }
+      }
       return;
     }
     case 'back': {

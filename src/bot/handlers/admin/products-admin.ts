@@ -30,7 +30,8 @@ async function listProducts(ctx: BotContext): Promise<void> {
 }
 
 async function showProduct(ctx: BotContext, product_id: string): Promise<void> {
-  const p = await getCollections().products.findOne({ product_id });
+  const c = getCollections();
+  const p = await c.products.findOne({ product_id });
   if (!p) {
     await ctx.reply('Продукт не знайдено.');
     return;
@@ -45,13 +46,55 @@ async function showProduct(ctx: BotContext, product_id: string): Promise<void> {
       /* ignore */
     }
   }
+  const typeLabel = p.type === 'digital' ? '🎬 Цифровий (відео)' : '🗓 Консультація';
+
+  // Для цифрових продуктів — список уроків зі станом відео
+  const lessonIds = (p.lessons as string[] | undefined) ?? [];
+  let lessonsBlock = '';
+  let lessonsForKb: Array<{ lesson_id: string; title: string; ok: boolean; order: number }> = [];
+  if (p.type === 'digital') {
+    const lessonDocs = await c.lessons
+      .find(
+        { lesson_id: { $in: lessonIds } },
+        {
+          projection: {
+            lesson_id: 1,
+            title: 1,
+            video_file_id: 1,
+            order_in_product: 1,
+          },
+        },
+      )
+      .toArray();
+    lessonsForKb = lessonDocs
+      .map((l) => ({
+        lesson_id: l.lesson_id as string,
+        title: l.title as string,
+        ok: l.video_file_id !== 'PENDING_UPLOAD' && Boolean(l.video_file_id),
+        order: (l.order_in_product as Record<string, number> | undefined)?.[product_id] ?? 999,
+      }))
+      .sort((a, b) => a.order - b.order);
+    const okCount = lessonsForKb.filter((l) => l.ok).length;
+    if (lessonsForKb.length === 0) {
+      lessonsBlock = '\n\n<b>🎥 Відео уроки:</b>\n<i>ще жодного — додай нижче</i>';
+    } else {
+      lessonsBlock =
+        `\n\n<b>🎥 Відео уроки:</b> ${okCount}/${lessonsForKb.length} готових\n` +
+        lessonsForKb
+          .map((l) => `${l.ok ? '✅' : '⚠️'} ${escapeHtml(l.title)}`)
+          .join('\n');
+    }
+  }
+
   const text =
     `🛒 ${bold(p.title)}\n` +
-    `ID: ${code(product_id)}\n` +
-    `Тип: ${escapeHtml(p.type)}\n` +
+    `Тип: ${escapeHtml(typeLabel)}\n` +
     `${escapeHtml(priceLine)}\n` +
-    `Видимий: ${p.visible ? '👁 так' : '🚫 ні'}\n\n` +
-    `<i>Опис:</i>\n${escapeHtml(p.description)}`;
+    `Показується юзерам: ${p.visible ? '👁 так' : '🚫 ні'}\n\n` +
+    `<i>Опис:</i>\n${escapeHtml(p.description)}` +
+    lessonsBlock +
+    `\n\n<i>службовий ID:</i> ${code(product_id)}`;
+
   const kb = new InlineKeyboard()
     .text('📝 Назва', `a:products:edit:${product_id}:title`)
     .text('📃 Опис', `a:products:edit:${product_id}:description`)
@@ -60,8 +103,17 @@ async function showProduct(ctx: BotContext, product_id: string): Promise<void> {
     .text('💱 Валюта', `a:products:edit:${product_id}:currency`)
     .row()
     .text(p.visible ? '🚫 Сховати' : '👁 Показати', `a:products:toggle:${product_id}`)
-    .row()
-    .text('⬅️ До списку', 'a:products');
+    .row();
+  if (p.type === 'digital') {
+    for (const l of lessonsForKb) {
+      kb.text(
+        `${l.ok ? '🎬' : '⬆️'} ${l.title}`,
+        `a:lessons:l:${l.lesson_id}`,
+      ).row();
+    }
+    kb.text('➕ Додати відео-урок', `a:products:add_lesson:${product_id}`).row();
+  }
+  kb.text('⬅️ До списку', 'a:products');
   try {
     await ctx.editMessageText(text, { reply_markup: kb, parse_mode: 'HTML' });
   } catch {
@@ -179,6 +231,12 @@ export function registerProductsActions(): void {
         const [product_id, field] = rest.slice('edit:'.length).split(':');
         if (!product_id || !field) return;
         await ctx.conversation.enter('edit_product_field', product_id, field as EditField);
+        return;
+      }
+      if (rest.startsWith('add_lesson:')) {
+        const product_id = rest.slice('add_lesson:'.length);
+        if (!product_id) return;
+        await ctx.conversation.enter('upload_lesson', `new:${product_id}`);
         return;
       }
     },

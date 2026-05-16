@@ -31,18 +31,26 @@ async function listLessons(ctx: BotContext): Promise<void> {
 }
 
 async function showLesson(ctx: BotContext, lesson_id: string): Promise<void> {
-  const l = await getCollections().lessons.findOne({ lesson_id });
+  const c = getCollections();
+  const l = await c.lessons.findOne({ lesson_id });
   if (!l) {
     await ctx.reply('Урок не знайдено.');
     return;
   }
   const fileOk = l.video_file_id && l.video_file_id !== 'PENDING_UPLOAD';
-  const productList = (l.product_ids as string[]).map((id) => code(id)).join(', ');
+  const prodIds = (l.product_ids as string[]) ?? [];
+  const prods = await c.products
+    .find({ product_id: { $in: prodIds } }, { projection: { product_id: 1, title: 1 } })
+    .toArray();
+  const titleMap = new Map(prods.map((p) => [p.product_id as string, p.title as string]));
+  const productList = prodIds.length
+    ? prodIds.map((id) => escapeHtml(titleMap.get(id) ?? id)).join(', ')
+    : '<i>не привʼязано</i>';
   const text =
     `🎬 ${bold(l.title)}\n` +
-    `ID: ${code(lesson_id)}\n` +
-    `Прив’язано до продуктів: ${productList}\n` +
-    `Відео: ${fileOk ? '✅ завантажено' : '⚠️ відсутнє'}`;
+    `Входить у курс: ${productList}\n` +
+    `Відео: ${fileOk ? '✅ завантажено' : '⚠️ відсутнє'}\n\n` +
+    `<i>службовий ID:</i> ${code(lesson_id)}`;
   const kb = new InlineKeyboard()
     .text('⬆️ Замінити відео', `a:lessons:replace:${lesson_id}`)
     .row()
@@ -54,14 +62,54 @@ async function showLesson(ctx: BotContext, lesson_id: string): Promise<void> {
   }
 }
 
+function slugify(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 40) || `lesson_${Date.now()}`
+  );
+}
+
+async function pickProductInline(
+  conversation: Conv,
+  ctx: BotContext,
+): Promise<{ product_id: string; title: string } | null> {
+  const { products } = getCollections();
+  const all = await conversation.external(() =>
+    products.find({ type: 'digital' }, { projection: { product_id: 1, title: 1 } }).toArray(),
+  );
+  if (all.length === 0) {
+    await ctx.reply('Немає цифрових продуктів — створи їх спершу в розділі 🛒 Продукти.');
+    return null;
+  }
+  const kb = new InlineKeyboard();
+  for (const p of all) {
+    kb.text(p.title as string, `pickprod:${p.product_id}`).row();
+  }
+  kb.text('🚫 Скасувати', 'pickprod:__cancel__');
+  await ctx.reply('🛒 До якого курсу/уроку привʼязати це відео?', { reply_markup: kb });
+  const got = await conversation.waitFor('callback_query:data');
+  await got.answerCallbackQuery().catch(() => undefined);
+  const data = got.callbackQuery.data;
+  if (!data.startsWith('pickprod:')) return null;
+  const picked = data.slice('pickprod:'.length);
+  if (picked === '__cancel__') return null;
+  const p = all.find((x) => x.product_id === picked);
+  return p ? { product_id: p.product_id as string, title: p.title as string } : null;
+}
+
 async function uploadLessonFlow(
   conversation: Conv,
   ctx: BotContext,
-  replaceLessonId?: string,
+  mode: { kind: 'replace'; lesson_id: string } | { kind: 'new'; preset_product_id?: string },
 ): Promise<void> {
   const { lessons, products, events } = getCollections();
 
-  await ctx.reply('⬆️ Надішли відео-файл (mp4) для уроку.\n<i>Або /cancel.</i>', {
+  await ctx.reply('🎥 Надішли відео-файл (mp4) для уроку.\n<i>Або /cancel щоб вийти.</i>', {
     parse_mode: 'HTML',
   });
   const videoMsg = await conversation.wait();
@@ -72,17 +120,17 @@ async function uploadLessonFlow(
   }
   const v = videoMsg.message?.video;
   if (!v) {
-    await ctx.reply('Не отримав відео. Завантаж саме як Video (mp4), а не як файл.');
+    await ctx.reply('Не отримав відео. Завантаж саме як Video (mp4), а не як файл-документ.');
     return;
   }
   const fileId = v.file_id;
   const duration = v.duration;
   const size = v.file_size;
 
-  if (replaceLessonId) {
+  if (mode.kind === 'replace') {
     await conversation.external(async () => {
       await lessons.updateOne(
-        { lesson_id: replaceLessonId },
+        { lesson_id: mode.lesson_id },
         {
           $set: {
             video_file_id: fileId,
@@ -96,17 +144,15 @@ async function uploadLessonFlow(
       await events.insertOne({
         user_tg_id: ctx.from?.id ?? 0,
         type: 'admin_lesson_replace',
-        payload: { lesson_id: replaceLessonId },
+        payload: { lesson_id: mode.lesson_id },
         at: new Date(),
       });
     });
-    await ctx.reply(`✅ Відео для уроку ${code(replaceLessonId)} оновлено.`, {
-      parse_mode: 'HTML',
-    });
+    await ctx.reply('✅ Відео уроку оновлено.', { parse_mode: 'HTML' });
     return;
   }
 
-  await ctx.reply('📝 Назва уроку?');
+  await ctx.reply('📝 Як назвати цей урок? (видно юзеру)');
   const titleMsg = await conversation.waitFor('message:text');
   const title = titleMsg.msg.text.trim();
   if (!title || title === '/cancel') {
@@ -114,45 +160,49 @@ async function uploadLessonFlow(
     return;
   }
 
-  await ctx.reply(
-    '🆔 Унікальний <code>lesson_id</code> (англ. малі літери, цифри, підкреслення)?',
-    { parse_mode: 'HTML' },
-  );
-  const idMsg = await conversation.waitFor('message:text');
-  const lesson_id = idMsg.msg.text.trim();
-  if (!/^[a-z0-9_]+$/.test(lesson_id)) {
-    await ctx.reply('Неприпустимий ID. Скасовано.');
-    return;
-  }
-  const exists = await conversation.external(() => lessons.findOne({ lesson_id }));
-  if (exists) {
-    await ctx.reply(`Урок з ID ${code(lesson_id)} уже існує. Скасовано.`, {
-      parse_mode: 'HTML',
-    });
-    return;
-  }
+  // Авто-генерую lesson_id зі slug-у назви; якщо колізія — додаю timestamp.
+  let lesson_id = slugify(title);
+  const collision = await conversation.external(() => lessons.findOne({ lesson_id }));
+  if (collision) lesson_id = `${lesson_id}_${Date.now().toString(36)}`;
 
-  await ctx.reply(
-    `🛒 До якого продукту прив’язати? Надішли ${code('product_id')} (наприклад ${code('lesson_resume')}).`,
-    { parse_mode: 'HTML' },
-  );
-  const prodMsg = await conversation.waitFor('message:text');
-  const product_id = prodMsg.msg.text.trim();
-  const product = await conversation.external(() => products.findOne({ product_id }));
-  if (!product) {
-    await ctx.reply(`Продукт ${code(product_id)} не знайдено. Скасовано.`, {
-      parse_mode: 'HTML',
-    });
-    return;
+  // Продукт: з preset (з картки продукту) або через інлайн-вибір
+  let product: { product_id: string; title: string } | null = null;
+  if (mode.preset_product_id) {
+    const p = await conversation.external(() =>
+      products.findOne({ product_id: mode.preset_product_id }),
+    );
+    if (!p) {
+      await ctx.reply('Продукт зник. Скасовано.');
+      return;
+    }
+    product = { product_id: p.product_id as string, title: p.title as string };
+  } else {
+    product = await pickProductInline(conversation, ctx);
+    if (!product) {
+      await ctx.reply('Скасовано.');
+      return;
+    }
   }
+  const product_id = product.product_id;
 
-  await ctx.reply('🔢 Порядковий номер уроку в продукті (1, 2, …)?');
-  const orderMsg = await conversation.waitFor('message:text');
-  const order = Number(orderMsg.msg.text.trim());
-  if (!Number.isFinite(order) || order < 1) {
-    await ctx.reply('Порядок має бути числом. Скасовано.');
-    return;
-  }
+  // Автоматичний наступний порядковий номер
+  const order = await conversation.external(async () => {
+    const existing = await products.findOne({ product_id });
+    const lessonIds = (existing?.lessons as string[] | undefined) ?? [];
+    if (lessonIds.length === 0) return 1;
+    const docs = await lessons
+      .find(
+        { lesson_id: { $in: lessonIds } },
+        { projection: { lesson_id: 1, order_in_product: 1 } },
+      )
+      .toArray();
+    let max = 0;
+    for (const d of docs) {
+      const o = (d.order_in_product as Record<string, number> | undefined)?.[product_id] ?? 0;
+      if (o > max) max = o;
+    }
+    return max + 1;
+  });
 
   await conversation.external(async () => {
     await lessons.insertOne({
@@ -174,17 +224,27 @@ async function uploadLessonFlow(
       at: new Date(),
     });
   });
+
   await ctx.reply(
-    `✅ Урок ${code(lesson_id)} додано до ${code(product_id)} (порядок ${order}). ${escapeHtml(title)}`,
+    `✅ Урок «${escapeHtml(title)}» додано до курсу «${escapeHtml(product.title)}» (порядок ${order}).`,
     { parse_mode: 'HTML' },
   );
 }
 
+// mode: 'new' (free), 'new:<product_id>' (pre-bind), 'replace:<lesson_id>'
 export const uploadLessonConv = createConversation<BotContext, BotContext>(
   async (conversation: Conv, ctx: BotContext, ...args: unknown[]): Promise<void> => {
-    const replaceLessonId = args[0] as string | undefined;
+    const arg = (args[0] as string | undefined) ?? 'new';
+    let mode: Parameters<typeof uploadLessonFlow>[2];
+    if (arg.startsWith('replace:')) {
+      mode = { kind: 'replace', lesson_id: arg.slice('replace:'.length) };
+    } else if (arg.startsWith('new:')) {
+      mode = { kind: 'new', preset_product_id: arg.slice('new:'.length) };
+    } else {
+      mode = { kind: 'new' };
+    }
     try {
-      await uploadLessonFlow(conversation, ctx, replaceLessonId);
+      await uploadLessonFlow(conversation, ctx, mode);
     } catch (err) {
       logger().error({ err }, 'upload lesson conversation failed');
       await ctx.reply('Помилка під час завантаження уроку.');
@@ -203,12 +263,12 @@ export function registerLessonsActions(): void {
         return;
       }
       if (rest === 'upload') {
-        await ctx.conversation.enter('upload_lesson');
+        await ctx.conversation.enter('upload_lesson', 'new');
         return;
       }
       if (rest.startsWith('replace:')) {
         const id = rest.slice('replace:'.length);
-        await ctx.conversation.enter('upload_lesson', id);
+        await ctx.conversation.enter('upload_lesson', `replace:${id}`);
         return;
       }
       if (rest.startsWith('l:')) {

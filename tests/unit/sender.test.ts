@@ -67,4 +67,26 @@ describe('sendChunks', () => {
     expect(api.sendChatAction).toHaveBeenCalledWith(42, 'upload_video_note');
     expect(api.sendVideoNote).toHaveBeenCalledWith(42, 'BAAC');
   });
+
+  it('bails out mid-stream when shouldAbort flips to true', async () => {
+    const api = fakeApi();
+    const sleep = vi.fn(async () => undefined);
+    const chunks: Chunk[] = [
+      { type: 'text', content: 'one', delay_before_ms: 0 },
+      { type: 'text', content: 'two', delay_before_ms: 0 },
+      { type: 'text', content: 'three', delay_before_ms: 0 },
+    ];
+    let calls = 0;
+    const shouldAbort = () => {
+      calls++;
+      // allow first two chunks (each chunk passes through the gate twice — pre-delay + pre-send),
+      // then abort.
+      return calls >= 5;
+    };
+    await sendChunks(api, 42, chunks, { sleep, shouldAbort });
+    // Verify we stopped before "three"
+    const texts = api.sendMessage.mock.calls.map((c) => c[1]);
+    expect(texts).not.toContain('three');
+    expect(texts).toEqual(['one', 'two']);
+  });
 });

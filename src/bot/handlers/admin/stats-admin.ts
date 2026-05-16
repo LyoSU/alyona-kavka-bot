@@ -1,5 +1,6 @@
 import { InlineKeyboard, InputFile } from 'grammy';
 import type { BotContext } from '@/bot/context';
+import { nodeLabel } from '@/domain/funnel/labels';
 import { exportPurchasesCsv, exportUsersCsv } from '@/domain/stats/csv';
 import { getFunnelStats, getQuickStats } from '@/domain/stats/repo';
 import { bold, code, escapeHtml } from '@/lib/html';
@@ -79,7 +80,7 @@ async function showFunnel(ctx: BotContext): Promise<void> {
     const top = steps[0]?.unique_users ?? 1;
     for (const s of steps) {
       const pct = top > 0 ? Math.round((s.unique_users / top) * 100) : 0;
-      lines.push(`${code(s.node_id)} — ${fmt(s.unique_users)} (${pct}%)`);
+      lines.push(`${escapeHtml(nodeLabel(s.node_id))} — ${fmt(s.unique_users)} (${pct}%)`);
     }
   }
 
