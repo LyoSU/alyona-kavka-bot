@@ -19,38 +19,24 @@ afterAll(async () => {
 
 describe('upsertUserFromTg', () => {
   it('creates new user with owner permissions if in OWNER_TG_IDS', async () => {
-    const u = await upsertUserFromTg(
-      { id: 100, first_name: 'Owner', language_code: 'uk' },
-      [100],
-    );
+    const u = await upsertUserFromTg({ id: 100, first_name: 'Owner', language_code: 'uk' }, [100]);
     expect(u.is_admin).toBe(true);
     expect(u.permissions.manage_admins).toBe(true);
     expect(u.permissions.support).toBe(true);
   });
 
   it('creates regular user with no permissions otherwise', async () => {
-    const u = await upsertUserFromTg(
-      { id: 200, first_name: 'Plain', language_code: 'uk' },
-      [100],
-    );
+    const u = await upsertUserFromTg({ id: 200, first_name: 'Plain', language_code: 'uk' }, [100]);
     expect(u.is_admin).toBe(false);
     expect(u.permissions.manage_admins).toBe(false);
     expect(u.permissions.support).toBe(false);
   });
 
   it('updates last_seen_at on existing user', async () => {
-    const first = await upsertUserFromTg(
-      { id: 300, first_name: 'A', language_code: 'uk' },
-      [],
-    );
+    const first = await upsertUserFromTg({ id: 300, first_name: 'A', language_code: 'uk' }, []);
     await new Promise((r) => setTimeout(r, 10));
-    const second = await upsertUserFromTg(
-      { id: 300, first_name: 'A', language_code: 'uk' },
-      [],
-    );
-    expect(second.last_seen_at.getTime()).toBeGreaterThan(
-      first.last_seen_at.getTime(),
-    );
+    const second = await upsertUserFromTg({ id: 300, first_name: 'A', language_code: 'uk' }, []);
+    expect(second.last_seen_at.getTime()).toBeGreaterThan(first.last_seen_at.getTime());
   });
 
   it('promotes existing user to admin if added to OWNER_TG_IDS', async () => {

@@ -31,10 +31,7 @@ type TgUser = {
   language_code?: string;
 };
 
-export async function upsertUserFromTg(
-  tg: TgUser,
-  ownerIds: number[],
-): Promise<UserDoc> {
+export async function upsertUserFromTg(tg: TgUser, ownerIds: number[]): Promise<UserDoc> {
   const { users } = getCollections();
   const now = new Date();
   const isOwner = ownerIds.includes(tg.id);
