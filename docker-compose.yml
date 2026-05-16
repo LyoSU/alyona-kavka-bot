@@ -49,6 +49,9 @@ services:
         condition: service_healthy
     expose:
       - "3000"
+    networks:
+      - default
+      - coolify
     logging:
       driver: json-file
       options:
@@ -96,3 +99,14 @@ services:
 volumes:
   mongo-data:
   backups:
+
+# Coolify global network — same network Traefik and other working
+# Coolify services use. We attach the bot here so it gets the same
+# internet egress + DNS resolver as nixpacks/dockerfile builds (where
+# app-specific compose overlay networks have no egress, causing
+# api.telegram.org to be unreachable).
+networks:
+  default: {}
+  coolify:
+    name: coolify
+    external: true
