@@ -19,6 +19,7 @@ import { createBot } from '@/bot/index';
 import { MAIN_REPLY_BTN_LESSONS, MAIN_REPLY_BTN_SUPPORT } from '@/bot/keyboards/main-reply';
 import { loadEnv } from '@/config/env';
 import { initDb } from '@/db/client';
+import { bootstrapSeed } from '@/bootstrap-seed';
 import { startBroadcastTicker } from '@/domain/broadcasts/ticker';
 import { startSweeper } from '@/domain/delivery/sweeper';
 import { handlePreCheckout, handleSuccessfulPayment } from '@/domain/payments/handlers';
@@ -35,6 +36,10 @@ async function bootstrap() {
   await initSodium();
   await initDb(env.MONGO_URI, env.MONGO_DB_NAME);
   logger().info('db ready');
+
+  // First-boot seeding (idempotent): if flow_nodes/products are empty, insert
+  // them from the bundled seed/ modules. Pre-existing edits are preserved.
+  await bootstrapSeed(env.LIQPAY_TEST_MODE);
 
   const bot = createBot(env.BOT_TOKEN, env.OWNER_TG_IDS);
 
