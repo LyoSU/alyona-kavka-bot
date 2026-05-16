@@ -14,10 +14,7 @@ const REDACT_PATHS = [
 ];
 
 export function createLogger(
-  opts: {
-    level?: LoggerOptions['level'];
-    destination?: (line: string) => void;
-  } = {},
+  opts: { level?: LoggerOptions['level']; destination?: (line: string) => void } = {},
 ): Logger {
   const level = opts.level ?? 'info';
   const baseOptions: LoggerOptions = {
