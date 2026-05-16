@@ -110,6 +110,20 @@ async function bootstrap() {
 
   logger().info('handlers registered');
 
+  // Network sanity: log getMe outcome and any DNS issue separately.
+  try {
+    const me = await Promise.race([
+      bot.api.getMe(),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('getMe 8s timeout')), 8000)),
+    ]);
+    logger().info({ me: { id: me.id, username: me.username } }, 'getMe ok');
+  } catch (err) {
+    logger().error(
+      { err, hint: 'TG API unreachable from this container. Check DNS/egress.' },
+      'getMe FAILED',
+    );
+  }
+
   // Start polling IMMEDIATELY. Webhook clearing and setMyCommands are
   // best-effort and must never block reception of updates.
   logger().info('starting http + runner');
