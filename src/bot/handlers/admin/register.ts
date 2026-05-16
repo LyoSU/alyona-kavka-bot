@@ -1,3 +1,4 @@
+import { registerBroadcastsActions } from './broadcasts-admin';
 import { registerContentActions } from './content';
 import { registerLessonsActions } from './lessons-admin';
 import { registerProductsActions } from './products-admin';
@@ -15,5 +16,6 @@ export function registerAllAdminActions(): void {
   registerProductsActions();
   registerTeamActions();
   registerSettingsActions();
+  registerBroadcastsActions();
   registerStubActions();
 }

@@ -1,5 +1,6 @@
 import type { Bot } from 'grammy';
 import type { BotContext } from '@/bot/context';
+import { newBroadcastConv } from './broadcasts-admin';
 import { editButtonConv, editChunkConv } from './content';
 import { uploadLessonConv } from './lessons-admin';
 import { editProductFieldConv } from './products-admin';
@@ -13,4 +14,5 @@ export function registerAdminConversations(bot: Bot<BotContext>): void {
   bot.use(editProductFieldConv);
   bot.use(setSettingConv);
   bot.use(addAdminConv);
+  bot.use(newBroadcastConv);
 }

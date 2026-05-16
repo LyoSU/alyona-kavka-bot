@@ -2,14 +2,6 @@ import { registerAdminAction } from './router';
 
 export function registerStubActions(): void {
   registerAdminAction({
-    prefix: 'a:broadcasts',
-    perm: 'broadcast',
-    run: async (ctx) => {
-      await ctx.reply('📣 Розсилки — у Phase 10. Скоро буде.');
-    },
-  });
-
-  registerAdminAction({
     prefix: 'a:stats',
     perm: 'view_stats',
     run: async (ctx) => {

@@ -11,6 +11,7 @@ import { createBot } from '@/bot/index';
 import { MAIN_REPLY_BTN_LESSONS, MAIN_REPLY_BTN_SUPPORT } from '@/bot/keyboards/main-reply';
 import { loadEnv } from '@/config/env';
 import { initDb } from '@/db/client';
+import { startBroadcastTicker } from '@/domain/broadcasts/ticker';
 import { startSweeper } from '@/domain/delivery/sweeper';
 import { handlePreCheckout, handleSuccessfulPayment } from '@/domain/payments/handlers';
 import { startHealth } from '@/http/server';
@@ -67,10 +68,12 @@ async function bootstrap() {
   const { stop: httpStop } = startHealth(env.PORT);
   const runner = run(bot);
   const sweeper = startSweeper(bot.api);
+  const broadcastTicker = startBroadcastTicker(bot.api);
   installShutdown({
     runner,
     httpStop: async () => {
       sweeper.stop();
+      broadcastTicker.stop();
       await httpStop();
     },
   });

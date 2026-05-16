@@ -66,5 +66,6 @@ async function ensureIndexes(): Promise<void> {
     c.events.createIndex({ user_tg_id: 1, at: -1 }),
     c.events.createIndex({ type: 1, at: -1 }),
     c.events.createIndex({ at: -1 }),
+    c.broadcasts.createIndex({ status: 1, created_at: 1 }),
   ]);
 }
