@@ -29,6 +29,11 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    # Some hosts (Coolify on certain VPSes) have broken docker-internal DNS to
+    # public endpoints. Pin Cloudflare + Google so api.telegram.org resolves.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       # Internal wiring — keep these fixed.
       MONGO_URI: mongodb://mongo:27017
