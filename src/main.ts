@@ -6,14 +6,17 @@ import { createBot } from '@/bot/index';
 import { MAIN_REPLY_BTN_LESSONS } from '@/bot/keyboards/main-reply';
 import { loadEnv } from '@/config/env';
 import { initDb } from '@/db/client';
+import { handlePreCheckout, handleSuccessfulPayment } from '@/domain/payments/handlers';
 import { startHealth } from '@/http/server';
 import { logger } from '@/lib/logger';
+import { initSodium } from '@/lib/secrets';
 import { captureError, initSentry } from '@/lib/sentry';
 import { installShutdown } from '@/shutdown';
 
 async function bootstrap() {
   const env = loadEnv();
   initSentry(env.SENTRY_DSN || undefined, env.NODE_ENV);
+  await initSodium();
   await initDb(env.MONGO_URI, env.MONGO_DB_NAME);
   logger().info('db ready');
 
@@ -28,6 +31,10 @@ async function bootstrap() {
   bot.command('lessons', handleMyLessons);
   bot.hears(MAIN_REPLY_BTN_LESSONS, handleMyLessons);
   bot.on('callback_query:data', handleCallback);
+
+  // payments
+  bot.on('pre_checkout_query', handlePreCheckout);
+  bot.on('message:successful_payment', handleSuccessfulPayment);
 
   // Ensure polling mode (drops any leftover webhook config)
   await bot.api.deleteWebhook({ drop_pending_updates: false });

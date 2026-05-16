@@ -1,7 +1,9 @@
 import type { BotContext } from '@/bot/context';
+import { loadEnv } from '@/config/env';
 import { getCollections } from '@/db/client';
 import { parse } from '@/domain/funnel/callbacks';
 import { renderNode } from '@/domain/funnel/engine';
+import { sendProductInvoice } from '@/domain/payments/invoice';
 import { logger } from '@/lib/logger';
 import { handleLessonPlay, handleLessonsProduct, handleMyLessons } from './lessons';
 
@@ -51,10 +53,30 @@ export async function handleCallback(ctx: BotContext): Promise<void> {
     case 'lessons_root':
       await handleMyLessons(ctx);
       return;
+    case 'buy': {
+      const product = await getCollections().products.findOne({ product_id: parsed.product_id });
+      if (!product) {
+        await ctx.reply('Продукт не знайдено 🤔');
+        return;
+      }
+      const env = loadEnv();
+      try {
+        await sendProductInvoice({
+          api: ctx.api,
+          chatId,
+          product,
+          providerToken: env.LIQPAY_PROVIDER_TOKEN,
+          nbuUrl: env.NBU_API_URL,
+        });
+      } catch (err) {
+        logger().error({ err, product_id: parsed.product_id }, 'invoice failed');
+        await ctx.reply('Не вдалося виставити рахунок 😔 Спробуй пізніше або напиши /help');
+      }
+      return;
+    }
     case 'open_product':
-    case 'buy':
     case 'support':
-      // wired in later phases (payments, support)
+      // wired in later phases (support)
       return;
     case 'unknown':
       logger().warn({ data }, 'unknown callback data');
