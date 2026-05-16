@@ -1,6 +1,8 @@
 import type { BotContext } from '@/bot/context';
 import { getCollections } from '@/db/client';
 import type { PurchaseDoc } from '@/db/schemas';
+import { notifyAppointmentRequest, notifyPurchase } from '@/domain/support/notifications';
+import { ensureTopic } from '@/domain/support/topic-manager';
 import { logger } from '@/lib/logger';
 import { SYSTEM_MESSAGES } from '../../../seed/system-messages';
 import { parseInvoicePayload } from './invoice';
@@ -80,4 +82,14 @@ export async function handleSuccessfulPayment(ctx: BotContext): Promise<void> {
       ? SYSTEM_MESSAGES.payment_success_digital_intro
       : SYSTEM_MESSAGES.payment_success_appointment;
   await ctx.reply(intro);
+
+  // CRM: ensure topic exists, then notify admins
+  if (ctx.state.user) {
+    await ensureTopic(ctx.api, ctx.state.user);
+  }
+  if (product.type === 'digital') {
+    await notifyPurchase(ctx.api, tgId, product.title, amountUah, sp.provider_payment_charge_id);
+  } else {
+    await notifyAppointmentRequest(ctx.api, tgId, product.title, amountUah);
+  }
 }

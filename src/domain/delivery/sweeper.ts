@@ -1,5 +1,6 @@
 import type { Api } from 'grammy';
 import { getCollections } from '@/db/client';
+import { notifyDeliveryFailure } from '@/domain/support/notifications';
 import { logger } from '@/lib/logger';
 import { SYSTEM_MESSAGES } from '../../../seed/system-messages';
 
@@ -110,6 +111,11 @@ export async function runSweeperOnce(api: Api): Promise<void> {
           await api.sendMessage(userId, SYSTEM_MESSAGES.delivery_failed_user);
         } catch {
           /* user blocked bot etc — ok */
+        }
+        try {
+          await notifyDeliveryFailure(api, userId, `${productId} (${attempts} attempts)`);
+        } catch {
+          /* notification failure should not block */
         }
         await getCollections().events.insertOne({
           user_tg_id: userId,

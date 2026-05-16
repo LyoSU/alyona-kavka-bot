@@ -1,9 +1,12 @@
 import { run } from '@grammyjs/runner';
+import { handleAdminReply } from '@/bot/handlers/admin-reply';
 import { handleCallback } from '@/bot/handlers/callback-router';
+import { handleInitAdminGroup } from '@/bot/handlers/init-admin-group';
 import { handleMyLessons } from '@/bot/handlers/lessons';
+import { handlePlainMessage, handleSupportButton } from '@/bot/handlers/plain-message';
 import { handleStart } from '@/bot/handlers/start';
 import { createBot } from '@/bot/index';
-import { MAIN_REPLY_BTN_LESSONS } from '@/bot/keyboards/main-reply';
+import { MAIN_REPLY_BTN_LESSONS, MAIN_REPLY_BTN_SUPPORT } from '@/bot/keyboards/main-reply';
 import { loadEnv } from '@/config/env';
 import { initDb } from '@/db/client';
 import { startSweeper } from '@/domain/delivery/sweeper';
@@ -30,12 +33,25 @@ async function bootstrap() {
 
   bot.command('start', handleStart);
   bot.command('lessons', handleMyLessons);
+  bot.command('init_admin_group', handleInitAdminGroup);
   bot.hears(MAIN_REPLY_BTN_LESSONS, handleMyLessons);
+  bot.hears(MAIN_REPLY_BTN_SUPPORT, handleSupportButton);
   bot.on('callback_query:data', handleCallback);
 
   // payments
   bot.on('pre_checkout_query', handlePreCheckout);
   bot.on('message:successful_payment', handleSuccessfulPayment);
+
+  // CRM relay: admin group → user (must come before plain-message handler)
+  bot.on('message', async (ctx, next) => {
+    if (ctx.chat?.type === 'supergroup' || ctx.chat?.type === 'group') {
+      await handleAdminReply(ctx);
+      return; // don't fall through
+    }
+    await next();
+  });
+  // user → admin relay (private chat)
+  bot.on('message', handlePlainMessage);
 
   // Ensure polling mode (drops any leftover webhook config)
   await bot.api.deleteWebhook({ drop_pending_updates: false });
