@@ -30,6 +30,10 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
+      # Node 17+ defaults to "verbatim" DNS order which prefers IPv6 (AAAA)
+      # when present. On Coolify containers without IPv6 egress this causes
+      # an ~8s connect hang to api.telegram.org. Force IPv4-first.
+      NODE_OPTIONS: --dns-result-order=ipv4first
       # Internal wiring — keep these fixed.
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB_NAME: alyona_bot
@@ -49,9 +53,6 @@ services:
         condition: service_healthy
     expose:
       - "3000"
-    networks:
-      - default
-      - coolify
     logging:
       driver: json-file
       options:
@@ -99,14 +100,3 @@ services:
 volumes:
   mongo-data:
   backups:
-
-# Coolify global network — same network Traefik and other working
-# Coolify services use. We attach the bot here so it gets the same
-# internet egress + DNS resolver as nixpacks/dockerfile builds (where
-# app-specific compose overlay networks have no egress, causing
-# api.telegram.org to be unreachable).
-networks:
-  default: {}
-  coolify:
-    name: coolify
-    external: true
