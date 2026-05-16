@@ -56,6 +56,8 @@ services:
         max-file: "5"
 
   # Daily mongodump → ./backups, rotates to keep last 7.
+  # Script inlined here so the service works both locally and on Coolify
+  # without depending on a host bind-mount.
   backup:
     image: mongo:7
     restart: unless-stopped
@@ -64,9 +66,32 @@ services:
         condition: service_healthy
     volumes:
       - backups:/backups
-      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+    environment:
+      DB_HOST: mongo
+      DB_PORT: "27017"
+      DB_NAME: alyona_bot
+      KEEP_DAYS: "7"
     entrypoint: ["/bin/sh", "-c"]
-    command: ["chmod +x /usr/local/bin/backup.sh && /usr/local/bin/backup.sh loop"]
+    command:
+      - |
+        set -eu
+        sleep 10
+        while true; do
+          ts="$$(date -u +%Y-%m-%d_%H%M%S)"
+          archive="/backups/$${DB_NAME}-$${ts}.archive.gz"
+          echo "[backup] $$(date -u) starting → $$archive"
+          if mongodump --host="$$DB_HOST" --port="$$DB_PORT" --db="$$DB_NAME" --archive="$$archive" --gzip --quiet; then
+            echo "[backup] ok ($$(du -h "$$archive" | cut -f1))"
+            # rotation
+            ls -1t /backups/$${DB_NAME}-*.archive.gz 2>/dev/null | tail -n +$$((KEEP_DAYS + 1)) | xargs -r rm -f --
+          else
+            echo "[backup] FAILED, retrying in 5min"
+            rm -f "$$archive"
+            sleep 300
+            continue
+          fi
+          sleep 86400
+        done
 
 volumes:
   mongo-data:
