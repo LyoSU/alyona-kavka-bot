@@ -35,8 +35,8 @@ Telegram-бот для Альони Кавки (HR-консультант з 18+
 ```mermaid
 graph TB
     subgraph "Docker container (single Node.js process)"
-        BOT[grammY bot<br/>+ runner + auto-retry + throttler]
-        WEBHOOK[Hono HTTP server<br/>webhook + /health]
+        BOT[grammY bot<br/>+ runner + auto-retry + throttler<br/>long-polling]
+        HEALTH[Hono /health endpoint<br/>для Docker HEALTHCHECK]
         FUNNEL[Funnel Engine]
         ADMIN[Admin Panel<br/>conversations]
         PAY[Payment Handler]
@@ -50,7 +50,6 @@ graph TB
         TG[Telegram Bot API]
         LIQPAY[LiqPay<br/>via TG Payments]
         NBU[NBU API<br/>USD→UAH rate]
-        CADDY[Caddy reverse-proxy<br/>auto Let's Encrypt]
     end
 
     subgraph "Storage"
@@ -62,9 +61,8 @@ graph TB
         ADMINGROUP[Адмін форум-група]
     end
 
-    USER -->|update| CADDY
-    CADDY --> WEBHOOK
-    WEBHOOK --> BOT
+    USER -.long-poll.-> TG
+    BOT -.getUpdates.-> TG
     BOT --> FUNNEL & ADMIN & PAY & SUPPORT
     DELIVERY --> TG
     BROADCAST --> TG
@@ -78,25 +76,27 @@ graph TB
 
 ---
 
-## 4. Tech Stack
+## 4. Tech Stack (станом на 2026-05, перевірено через npm registry)
 
-| Шар | Інструмент | Чому |
-|-----|-----------|------|
-| Runtime | **Node.js 22 LTS** | Підтримка ще 2.5+ роки, top performance |
-| Мова | **TypeScript 5.x strict + `noUncheckedIndexedAccess`** | Тип-safe, ловить null/undefined на компіляції |
-| Bot framework | **grammY** + `runner` + `auto-retry` + `conversations` + `menu` + `transformer-throttler` + `storage-mongodb` | Type-safe, production-ready, активний community |
-| HTTP | **Hono** | Швидкий, мінімальний, підтримка webhook signature verify |
-| DB | **MongoDB 7+** через native `mongodb` driver | Без Mongoose magic, прямий контроль |
-| Валідація | **Zod 3** | Один тул для env, runtime input, DB schemas |
-| Логи | **pino** з redact (PII) | JSON-логи, швидкість |
-| Errors | **Sentry** | Прод-моніторинг |
-| Міграції | **migrate-mongo** | Версіонування схем |
-| Білд | **tsup** | Single-bundle, швидко |
-| Тести | **Vitest** + **testcontainers-node** (Mongo) | Unit + integration |
-| Lint/Format | **Biome** | Швидше за ESLint+Prettier, один тул |
-| CI | **GitHub Actions** | Безкоштовно для приватних репозиторіїв з лімітом |
-| Деплой | **Docker multi-stage (distroless final)** + docker-compose | Малий image, нема shell у проді |
-| Reverse-proxy | **Caddy** | Авто-SSL, простота |
+| Шар | Інструмент | Версія | Чому |
+|-----|-----------|--------|------|
+| Runtime | **Node.js 24 LTS** | 24.x | Active LTS до 2026-10, потім Maintenance до 2028-04 |
+| Мова | **TypeScript 6 strict + `noUncheckedIndexedAccess`** | ^6.0 | Тип-safe, ловить null/undefined на компіляції |
+| Bot framework | **grammY** core + плагіни | grammy ^1.43, conversations ^2.1, runner ^2.0, auto-retry ^2.0, menu ^1.3, transformer-throttler ^1.2, storage-mongodb ^2.5, files ^1.2 | Type-safe, production-ready, активний community |
+| HTTP (тільки health) | **Hono** + `@hono/node-server` | ^4.12, ^2.0 | Мінімальний health-endpoint для Docker HEALTHCHECK; webhook не використовуємо (TG long-poll справляється) |
+| DB driver | **MongoDB native driver** | ^7.2 | Без Mongoose magic, прямий контроль |
+| Валідація | **Zod 4 Classic** | ^4.4 | Один тул для env, runtime input, DB schemas |
+| Логи | **pino** + **pino-pretty** | ^10.3, ^13.1 | JSON-логи з PII redact, швидкість |
+| Errors | **@sentry/node** | ^10.5 | Прод-моніторинг, OpenTelemetry 2.x |
+| Міграції | **migrate-mongo** | ^14.0 | Версіонування схем |
+| Білд | **tsup** | ^8.5 | Single-bundle, швидко |
+| Тести | **Vitest** + **@testcontainers/mongodb** | ^4.1, ^11.14 | Unit + integration |
+| Lint/Format | **Biome 2** | ^2.4 | Швидше за ESLint+Prettier, один тул |
+| HTTP-клієнт | **undici** | ^8.3 | Швидкі fetch-style запити (NBU API) |
+| Crypto | **libsodium-wrappers** | ^0.8 | Шифрування secrets у settings |
+| CI | **GitHub Actions** | — | Безкоштовно для приватних репозиторіїв з лімітом |
+| Деплой | **Docker multi-stage (distroless final)** + docker-compose | — | Малий image (~70MB), нема shell у проді |
+| Деплой-режим | **Long-polling через @grammyjs/runner** | — | Без публічного домену/SSL, простота; одна інстанція бота |
 
 **Чому не Mongoose:** історія middleware-багів у production, magic у hooks/virtuals що погано взаємодіє з async generators (`conversations`). Прямий driver + Zod дає кращу type-safety.
 
@@ -836,10 +836,12 @@ Mongo aggregation pipeline: для кожної ключової ноди → к
 - `BOT_TOKEN`, `LIQPAY_*`, `SENTRY_DSN`, `MONGO_URI`, `OWNER_TG_IDS`, `MASTER_KEY` — лише через env (validated by Zod at startup).
 - `settings.liqpay_provider_token` — encrypted at rest (libsodium secretbox).
 
-### Webhook security
+### Telegram-комунікація
 
-- TG webhook URL містить **secret_token** (header `X-Telegram-Bot-Api-Secret-Token`).
-- Hono middleware валідує header перед передачею в grammY.
+- **Тільки long-polling** через `@grammyjs/runner`. Без публічного HTTPS-домену.
+- Бот робить `deleteWebhook({ drop_pending_updates: false })` на старті, щоб гарантувати polling.
+- Один екземпляр бота (long-polling не масштабується горизонтально). При перевищенні навантаження > 50k активних/день — перейти на webhook (потребує домену+SSL).
+- Health-endpoint `/health` доступний тільки всередині Docker network для HEALTHCHECK, не публічний.
 
 ---
 
@@ -876,37 +878,31 @@ Mongo aggregation pipeline: для кожної ключової ноди → к
 
 ```
 docker-compose.yml
-├── bot (multi-stage Dockerfile, distroless final)
-├── mongo (official mongo:7)
-└── caddy (auto SSL + reverse-proxy на bot:3000)
+├── bot   (multi-stage Dockerfile, distroless final, long-polling)
+└── mongo (official mongo:7)
 ```
 
 ### Dockerfile (multi-stage)
 
 ```dockerfile
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build           # tsup → dist/bundle.cjs
 
-FROM gcr.io/distroless/nodejs22-debian12
+FROM gcr.io/distroless/nodejs24-debian12
 WORKDIR /app
 COPY --from=builder /app/dist/bundle.cjs ./
 COPY --from=builder /app/node_modules ./node_modules
 USER nonroot
+# /health доступний всередині docker network для HEALTHCHECK
 EXPOSE 3000
 CMD ["bundle.cjs"]
 ```
 
-### Caddyfile
-
-```
-bot.alyona.example.com {
-    reverse_proxy bot:3000
-}
-```
+**Без reverse-proxy.** Бот працює через long-polling, не приймає вхідних HTTP-з'єднань ззовні. Порт 3000 — тільки для Docker HEALTHCHECK.
 
 ### Запуск міграцій
 
@@ -1090,8 +1086,7 @@ bot.alyona.example.com {
 ## 22. Відкриті питання (для замовника)
 
 1. **Privacy policy URL** — потрібен URL на лендінг з політикою (юридично обов'язково для TG approval і GDPR). Хто пише текст і де хоститься?
-2. **Доменне ім'я для webhook** (наприклад `bot.alyona.example.com`) — є чи потрібно реєструвати?
-3. **Сервер для деплою** — VPS вже є? Які характеристики? (Рекомендую мінімум: 2 vCPU, 4 GB RAM, 40 GB SSD).
+2. **Сервер для деплою** — VPS вже є? Які характеристики? (Рекомендую мінімум: 2 vCPU, 4 GB RAM, 40 GB SSD). Публічний домен не потрібен (polling).
 4. **Owner TG ID** — TG-акаунт Альони (буде в env `OWNER_TG_IDS`). Помічників додає сама через `/admin → ⚙️ → 👥 Команда`.
 5. **LiqPay credentials** — потрібен provider_token (test і prod). Альона має кабінет LiqPay?
 6. **Бухгалтерія** — для перших 3-6 місяців досить purchases в Mongo + CSV-експорт, чи треба одразу інтеграцію з ПРРО/Checkbox?
