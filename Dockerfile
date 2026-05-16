@@ -3,7 +3,7 @@
 # ============================
 # Stage 1 — Builder
 # ============================
-FROM node:24-alpine AS builder
+FROM node:24-slim AS builder
 WORKDIR /app
 
 # Install all deps (dev + prod) for bundling.
@@ -24,15 +24,18 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ============================
-# Stage 2 — Runtime
+# Stage 2 — Runtime (Debian slim — glibc avoids musl DNS quirks on some
+# container hosts where api.telegram.org fails to resolve under load).
 # ============================
-FROM node:24-alpine AS runtime
+FROM node:24-slim AS runtime
 WORKDIR /app
 
-# wget for HEALTHCHECK
-RUN apk add --no-cache wget tini && \
-    addgroup -g 1001 -S app && \
-    adduser  -u 1001 -S app -G app
+# wget for HEALTHCHECK, tini for PID-1 signal handling
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget tini ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -g 1001 -r app && \
+    useradd -u 1001 -r -g app -s /usr/sbin/nologin app
 
 ENV NODE_ENV=production \
     PORT=3000
@@ -51,5 +54,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -q --spider http://127.0.0.1:3000/health || exit 1
 
 # tini reaps zombies and forwards SIGTERM to Node for graceful shutdown
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/main.cjs"]
