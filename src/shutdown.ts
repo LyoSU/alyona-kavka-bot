@@ -4,10 +4,7 @@ import { logger } from '@/lib/logger';
 
 type Runner = ReturnType<typeof run>;
 
-export function installShutdown(opts: {
-  runner: Runner;
-  httpStop: () => Promise<void>;
-}): void {
+export function installShutdown(opts: { runner: Runner; httpStop: () => Promise<void> }): void {
   let stopping = false;
   const stop = async (signal: string) => {
     if (stopping) return;
