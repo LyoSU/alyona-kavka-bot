@@ -1,0 +1,301 @@
+import { createConversation } from '@grammyjs/conversations';
+import { InlineKeyboard } from 'grammy';
+import type { BotContext } from '@/bot/context';
+import { getCollections } from '@/db/client';
+import { code, escapeHtml, pre } from '@/lib/html';
+import { logger } from '@/lib/logger';
+import { registerAdminAction } from './router';
+
+const PAGE = 10;
+
+type Conv = Parameters<Parameters<typeof createConversation<BotContext, BotContext>>[0]>[0];
+
+function pageKeyboard(nodes: string[], page: number): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  const slice = nodes.slice(page * PAGE, page * PAGE + PAGE);
+  for (const id of slice) kb.text(id, `a:content:n:${id}`).row();
+  const totalPages = Math.ceil(nodes.length / PAGE);
+  if (totalPages > 1) {
+    if (page > 0) kb.text('◀️', `a:content:page:${page - 1}`);
+    kb.text(`${page + 1}/${totalPages}`, 'a:noop');
+    if (page < totalPages - 1) kb.text('▶️', `a:content:page:${page + 1}`);
+    kb.row();
+  }
+  kb.text('⬅️ Адмін-меню', 'a:home');
+  return kb;
+}
+
+async function listNodes(ctx: BotContext, page = 0): Promise<void> {
+  const docs = await getCollections()
+    .flow_nodes.find({}, { projection: { node_id: 1 } })
+    .toArray();
+  const ids = docs.map((d) => d.node_id as string).sort();
+  const text = `📝 <b>Контент воронки</b>\nВибери ноду (${ids.length}):`;
+  const kb = pageKeyboard(ids, page);
+  try {
+    await ctx.editMessageText(text, { reply_markup: kb, parse_mode: 'HTML' });
+  } catch {
+    await ctx.reply(text, { reply_markup: kb, parse_mode: 'HTML' });
+  }
+}
+
+function nodeKeyboard(node: {
+  node_id: string;
+  chunks: Array<Record<string, unknown>>;
+  buttons: Array<Record<string, unknown>>;
+}): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  node.chunks.forEach((c, idx) => {
+    const t = c.type as string;
+    const preview = t === 'text' ? String(c.content ?? '').slice(0, 24) : t;
+    kb.text(`📄 ${idx + 1}. ${t}: ${preview}`, `a:content:edit:${node.node_id}:${idx}`).row();
+  });
+  node.buttons.forEach((b, idx) => {
+    kb.text(`🔘 ${b.label as string}`, `a:content:btn:${node.node_id}:${idx}`).row();
+  });
+  kb.text('⬅️ Назад до списку', 'a:content').row();
+  return kb;
+}
+
+async function showNode(ctx: BotContext, node_id: string): Promise<void> {
+  const doc = await getCollections().flow_nodes.findOne({ node_id });
+  if (!doc) {
+    await ctx.reply(`Ноду «${escapeHtml(node_id)}» не знайдено`, { parse_mode: 'HTML' });
+    return;
+  }
+  const text = `🧩 <b>Нода:</b> ${code(node_id)}`;
+  const kb = nodeKeyboard(
+    doc as unknown as {
+      node_id: string;
+      chunks: Array<Record<string, unknown>>;
+      buttons: Array<Record<string, unknown>>;
+    },
+  );
+  try {
+    await ctx.editMessageText(text, { reply_markup: kb, parse_mode: 'HTML' });
+  } catch {
+    await ctx.reply(text, { reply_markup: kb, parse_mode: 'HTML' });
+  }
+}
+
+async function editChunkConversation(
+  conversation: Conv,
+  ctx: BotContext,
+  node_id: string,
+  chunkIdx: number,
+): Promise<void> {
+  const { flow_nodes } = getCollections();
+  const doc = await conversation.external(() => flow_nodes.findOne({ node_id }));
+  if (!doc) {
+    await ctx.reply('Нода зникла');
+    return;
+  }
+  const chunk = (doc.chunks as Array<Record<string, unknown>>)[chunkIdx];
+  if (!chunk) {
+    await ctx.reply('Чанк зник');
+    return;
+  }
+  const t = chunk.type as string;
+  if (t === 'text') {
+    const current = String(chunk.content ?? '');
+    await ctx.reply(
+      `✏️ Надішли новий <b>текст</b> для чанку #${chunkIdx + 1}:\n\nПоточний:\n${pre(current)}\n\n<i>Або /cancel щоб скасувати.</i>`,
+      { parse_mode: 'HTML' },
+    );
+    const got = await conversation.waitFor('message:text');
+    const txt = got.msg.text.trim();
+    if (txt === '/cancel') {
+      await ctx.reply('Скасовано.');
+      return;
+    }
+    await conversation.external(async () => {
+      await flow_nodes.updateOne(
+        { node_id },
+        {
+          $set: {
+            [`chunks.${chunkIdx}.content`]: txt,
+            updated_at: new Date(),
+            updated_by_tg_id: ctx.from?.id,
+          },
+        },
+      );
+      await getCollections().events.insertOne({
+        user_tg_id: ctx.from?.id ?? 0,
+        type: 'admin_edit_node',
+        payload: { node_id, chunk_idx: chunkIdx, type: 'text' },
+        at: new Date(),
+      });
+    });
+    await ctx.reply(`✅ Збережено. Текст чанку #${chunkIdx + 1} оновлено.`);
+  } else if (t === 'photo') {
+    await ctx.reply(`🖼 Надішли нове <b>фото</b> для чанку #${chunkIdx + 1}, або /cancel.`, {
+      parse_mode: 'HTML',
+    });
+    const got = await conversation.waitFor('message:photo');
+    const photos = got.msg.photo;
+    const largest = photos[photos.length - 1];
+    if (!largest) {
+      await ctx.reply('Фото не розпізнано.');
+      return;
+    }
+    const fileId = largest.file_id;
+    await conversation.external(async () => {
+      await flow_nodes.updateOne(
+        { node_id },
+        {
+          $set: {
+            [`chunks.${chunkIdx}.file_id`]: fileId,
+            updated_at: new Date(),
+            updated_by_tg_id: ctx.from?.id,
+          },
+        },
+      );
+      await getCollections().events.insertOne({
+        user_tg_id: ctx.from?.id ?? 0,
+        type: 'admin_edit_node',
+        payload: { node_id, chunk_idx: chunkIdx, type: 'photo' },
+        at: new Date(),
+      });
+    });
+    await ctx.reply('✅ Фото оновлено.');
+  } else if (t === 'video_note') {
+    await ctx.reply(
+      `🎥 Надішли нове <b>відео-кружок</b> для чанку #${chunkIdx + 1}, або /cancel.`,
+      { parse_mode: 'HTML' },
+    );
+    const got = await conversation.waitFor('message:video_note');
+    const fileId = got.msg.video_note.file_id;
+    await conversation.external(async () => {
+      await flow_nodes.updateOne(
+        { node_id },
+        {
+          $set: {
+            [`chunks.${chunkIdx}.file_id`]: fileId,
+            updated_at: new Date(),
+            updated_by_tg_id: ctx.from?.id,
+          },
+        },
+      );
+      await getCollections().events.insertOne({
+        user_tg_id: ctx.from?.id ?? 0,
+        type: 'admin_edit_node',
+        payload: { node_id, chunk_idx: chunkIdx, type: 'video_note' },
+        at: new Date(),
+      });
+    });
+    await ctx.reply('✅ Відео-кружок оновлено.');
+  } else {
+    await ctx.reply(`Тип «${escapeHtml(t)}» не редагується через UI (це службова пауза).`, {
+      parse_mode: 'HTML',
+    });
+  }
+}
+
+async function editButtonLabelConversation(
+  conversation: Conv,
+  ctx: BotContext,
+  node_id: string,
+  btnIdx: number,
+): Promise<void> {
+  const { flow_nodes } = getCollections();
+  const doc = await conversation.external(() => flow_nodes.findOne({ node_id }));
+  if (!doc) {
+    await ctx.reply('Нода зникла');
+    return;
+  }
+  const button = (doc.buttons as Array<Record<string, unknown>>)[btnIdx];
+  if (!button) {
+    await ctx.reply('Кнопка зникла');
+    return;
+  }
+  await ctx.reply(
+    `✏️ Надішли новий <b>напис</b> для кнопки:\n\nПоточний: ${code(button.label as string)}\n\n<i>Або /cancel.</i>`,
+    { parse_mode: 'HTML' },
+  );
+  const got = await conversation.waitFor('message:text');
+  const txt = got.msg.text.trim();
+  if (txt === '/cancel' || !txt) {
+    await ctx.reply('Скасовано.');
+    return;
+  }
+  await conversation.external(async () => {
+    await flow_nodes.updateOne(
+      { node_id },
+      {
+        $set: {
+          [`buttons.${btnIdx}.label`]: txt,
+          updated_at: new Date(),
+          updated_by_tg_id: ctx.from?.id,
+        },
+      },
+    );
+    await getCollections().events.insertOne({
+      user_tg_id: ctx.from?.id ?? 0,
+      type: 'admin_edit_button',
+      payload: { node_id, btn_idx: btnIdx },
+      at: new Date(),
+    });
+  });
+  await ctx.reply('✅ Напис кнопки оновлено.');
+}
+
+export const editChunkConv = createConversation<BotContext, BotContext>(
+  async (conversation: Conv, ctx: BotContext, ...args: unknown[]): Promise<void> => {
+    const node_id = args[0] as string;
+    const chunkIdx = args[1] as number;
+    try {
+      await editChunkConversation(conversation, ctx, node_id, chunkIdx);
+    } catch (err) {
+      logger().error({ err, node_id, chunkIdx }, 'editChunk failed');
+      await ctx.reply('Помилка при редагуванні.');
+    }
+  },
+  'edit_chunk',
+);
+
+export const editButtonConv = createConversation<BotContext, BotContext>(
+  async (conversation: Conv, ctx: BotContext, ...args: unknown[]): Promise<void> => {
+    const node_id = args[0] as string;
+    const btnIdx = args[1] as number;
+    try {
+      await editButtonLabelConversation(conversation, ctx, node_id, btnIdx);
+    } catch (err) {
+      logger().error({ err, node_id, btnIdx }, 'editButton failed');
+      await ctx.reply('Помилка при редагуванні кнопки.');
+    }
+  },
+  'edit_button',
+);
+
+export function registerContentActions(): void {
+  registerAdminAction({
+    prefix: 'a:content',
+    perm: 'edit_content',
+    run: async (ctx, rest) => {
+      if (rest === '' || rest.startsWith('page:')) {
+        const page = rest === '' ? 0 : Number(rest.slice('page:'.length));
+        await listNodes(ctx, Number.isFinite(page) ? page : 0);
+        return;
+      }
+      if (rest.startsWith('n:')) {
+        const node_id = rest.slice('n:'.length);
+        await showNode(ctx, node_id);
+        return;
+      }
+      if (rest.startsWith('edit:')) {
+        const [node_id, idxStr] = rest.slice('edit:'.length).split(':');
+        const idx = Number(idxStr);
+        if (!node_id || !Number.isFinite(idx)) return;
+        await ctx.conversation.enter('edit_chunk', node_id, idx);
+        return;
+      }
+      if (rest.startsWith('btn:')) {
+        const [node_id, idxStr] = rest.slice('btn:'.length).split(':');
+        const idx = Number(idxStr);
+        if (!node_id || !Number.isFinite(idx)) return;
+        await ctx.conversation.enter('edit_button', node_id, idx);
+        return;
+      }
+    },
+  });
+}

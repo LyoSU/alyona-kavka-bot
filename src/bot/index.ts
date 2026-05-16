@@ -5,6 +5,7 @@ import { apiThrottler } from '@grammyjs/transformer-throttler';
 import { Bot, session } from 'grammy';
 import { getDb } from '@/db/client';
 import type { BotContext, SessionData } from './context';
+import { registerAdminConversations } from './handlers/admin/conversations';
 import { userMiddleware } from './middlewares/user';
 
 export function createBot(token: string, ownerIds: number[]): Bot<BotContext> {
@@ -28,6 +29,7 @@ export function createBot(token: string, ownerIds: number[]): Bot<BotContext> {
   );
 
   bot.use(conversations());
+  registerAdminConversations(bot);
   bot.use(userMiddleware(ownerIds));
 
   return bot;

@@ -1,5 +1,6 @@
 import type { Api } from 'grammy';
 import { getCollections } from '@/db/client';
+import { bold, code, escapeHtml } from '@/lib/html';
 
 function fmtNow(): string {
   return new Date().toISOString().slice(0, 16).replace('T', ' ');
@@ -18,11 +19,15 @@ export async function notifyPurchase(
 ): Promise<void> {
   const t = await getTopic(user_tg_id);
   if (!t) return;
-  await api.sendMessage(
-    t.chat_id,
-    `🟢 КУПІВЛЯ\n${title}\n${amount_uah} ₴\n${fmtNow()} · pay-id: ${payment_id}`,
-    { message_thread_id: t.thread_id },
-  );
+  const text =
+    `${bold('🟢 КУПІВЛЯ')}\n` +
+    `${escapeHtml(title)}\n` +
+    `${amount_uah} ₴\n` +
+    `${escapeHtml(fmtNow())} · pay-id: ${code(payment_id)}`;
+  await api.sendMessage(t.chat_id, text, {
+    message_thread_id: t.thread_id,
+    parse_mode: 'HTML',
+  });
 }
 
 export async function notifyAppointmentRequest(
@@ -33,11 +38,14 @@ export async function notifyAppointmentRequest(
 ): Promise<void> {
   const t = await getTopic(user_tg_id);
   if (!t) return;
-  await api.sendMessage(
-    t.chat_id,
-    `🟠 ЗАЯВКА\n${title} · ${amount_uah} ₴\n❗ Потребує реакції — узгодити час`,
-    { message_thread_id: t.thread_id },
-  );
+  const text =
+    `${bold('🟠 ЗАЯВКА')}\n` +
+    `${escapeHtml(title)} · ${amount_uah} ₴\n` +
+    '❗ Потребує реакції — узгодити час';
+  await api.sendMessage(t.chat_id, text, {
+    message_thread_id: t.thread_id,
+    parse_mode: 'HTML',
+  });
 }
 
 export async function notifyDeliveryFailure(
@@ -47,8 +55,9 @@ export async function notifyDeliveryFailure(
 ): Promise<void> {
   const t = await getTopic(user_tg_id);
   if (!t) return;
-  await api.sendMessage(t.chat_id, `🔴 Помилка доставки: ${info}`, {
+  await api.sendMessage(t.chat_id, `${bold('🔴 Помилка доставки')}: ${escapeHtml(info)}`, {
     message_thread_id: t.thread_id,
+    parse_mode: 'HTML',
   });
 }
 
@@ -57,7 +66,6 @@ export async function notifyFunnelStep(
   user_tg_id: number,
   node_id: string,
 ): Promise<void> {
-  // Throttle: only one per (user, node) per hour to avoid spam.
   const cutoff = new Date(Date.now() - 60 * 60_000);
   const recent = await getCollections().events.findOne({
     user_tg_id,
@@ -74,7 +82,8 @@ export async function notifyFunnelStep(
   });
   const t = await getTopic(user_tg_id);
   if (!t) return;
-  await api.sendMessage(t.chat_id, `🔵 Дійшов до: ${node_id}`, {
+  await api.sendMessage(t.chat_id, `🔵 Дійшов до: ${code(node_id)}`, {
     message_thread_id: t.thread_id,
+    parse_mode: 'HTML',
   });
 }

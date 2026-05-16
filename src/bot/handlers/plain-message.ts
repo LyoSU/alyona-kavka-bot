@@ -9,6 +9,9 @@ export async function handlePlainMessage(ctx: BotContext): Promise<void> {
   if (!ctx.message || !ctx.from || !ctx.chat) return;
   if (ctx.chat.type !== 'private') return; // ignore admin group / other chats here
 
+  // ignore service shares from KeyboardButton.request_users / request_chat
+  if (ctx.message.users_shared || ctx.message.chat_shared) return;
+
   const text = ctx.message.text;
   if (text === MAIN_REPLY_BTN_LESSONS || text === MAIN_REPLY_BTN_SUPPORT) return;
   if (typeof text === 'string' && text.startsWith('/')) return;

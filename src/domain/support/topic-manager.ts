@@ -21,6 +21,7 @@ async function createTopic(api: Api, user: UserDoc, adminChatId: number): Promis
   const topic = await api.createForumTopic(adminChatId, topicName(user));
   const card = await api.sendMessage(adminChatId, renderCard(user), {
     message_thread_id: topic.message_thread_id,
+    parse_mode: 'HTML',
   });
   try {
     await api.pinChatMessage(adminChatId, card.message_id);
@@ -55,7 +56,9 @@ export async function updateCard(api: Api, user: UserDoc): Promise<void> {
   const t = await getCollections().support_topics.findOne({ user_tg_id: user.tg_id });
   if (!t) return;
   try {
-    await api.editMessageText(t.chat_id, t.pinned_card_message_id, renderCard(user));
+    await api.editMessageText(t.chat_id, t.pinned_card_message_id, renderCard(user), {
+      parse_mode: 'HTML',
+    });
   } catch (err) {
     if (err instanceof GrammyError) {
       if (err.description.includes('message is not modified')) return;

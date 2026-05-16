@@ -1,7 +1,9 @@
 import { run } from '@grammyjs/runner';
+import { handleAdmin } from '@/bot/handlers/admin/menu';
+import { registerAllAdminActions } from '@/bot/handlers/admin/register';
 import { handleAdminReply } from '@/bot/handlers/admin-reply';
 import { handleCallback } from '@/bot/handlers/callback-router';
-import { handleInitAdminGroup } from '@/bot/handlers/init-admin-group';
+import { handleChatsShared, handleInitAdminGroup } from '@/bot/handlers/init-admin-group';
 import { handleMyLessons } from '@/bot/handlers/lessons';
 import { handlePlainMessage, handleSupportButton } from '@/bot/handlers/plain-message';
 import { handleStart } from '@/bot/handlers/start';
@@ -31,8 +33,11 @@ async function bootstrap() {
     captureError(error, { update_id: ctx.update.update_id });
   });
 
+  registerAllAdminActions();
+
   bot.command('start', handleStart);
   bot.command('lessons', handleMyLessons);
+  bot.command('admin', handleAdmin);
   bot.command('init_admin_group', handleInitAdminGroup);
   bot.hears(MAIN_REPLY_BTN_LESSONS, handleMyLessons);
   bot.hears(MAIN_REPLY_BTN_SUPPORT, handleSupportButton);
@@ -41,6 +46,9 @@ async function bootstrap() {
   // payments
   bot.on('pre_checkout_query', handlePreCheckout);
   bot.on('message:successful_payment', handleSuccessfulPayment);
+
+  // chat_shared / users_shared come as messages in private chats — handle them before relay
+  bot.on('message:chat_shared', handleChatsShared);
 
   // CRM relay: admin group → user (must come before plain-message handler)
   bot.on('message', async (ctx, next) => {

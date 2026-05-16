@@ -5,6 +5,7 @@ import { parse } from '@/domain/funnel/callbacks';
 import { renderNode } from '@/domain/funnel/engine';
 import { sendProductInvoice } from '@/domain/payments/invoice';
 import { logger } from '@/lib/logger';
+import { handleAdminCallback } from './admin/router';
 import { handleLessonPlay, handleLessonsProduct, handleMyLessons } from './lessons';
 
 export async function handleCallback(ctx: BotContext): Promise<void> {
@@ -12,6 +13,12 @@ export async function handleCallback(ctx: BotContext): Promise<void> {
   const chatId = ctx.chat?.id;
   const tgId = ctx.from?.id;
   if (!data || !chatId || !tgId) return;
+
+  // admin callbacks have their own router and answer protocol
+  if (data.startsWith('a:')) {
+    await handleAdminCallback(ctx);
+    return;
+  }
 
   await ctx.answerCallbackQuery().catch(() => undefined);
 
