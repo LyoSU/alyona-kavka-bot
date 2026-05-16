@@ -1,7 +1,9 @@
 import { run } from '@grammyjs/runner';
 import { handleCallback } from '@/bot/handlers/callback-router';
+import { handleMyLessons } from '@/bot/handlers/lessons';
 import { handleStart } from '@/bot/handlers/start';
 import { createBot } from '@/bot/index';
+import { MAIN_REPLY_BTN_LESSONS } from '@/bot/keyboards/main-reply';
 import { loadEnv } from '@/config/env';
 import { initDb } from '@/db/client';
 import { startHealth } from '@/http/server';
@@ -23,6 +25,8 @@ async function bootstrap() {
   });
 
   bot.command('start', handleStart);
+  bot.command('lessons', handleMyLessons);
+  bot.hears(MAIN_REPLY_BTN_LESSONS, handleMyLessons);
   bot.on('callback_query:data', handleCallback);
 
   // Ensure polling mode (drops any leftover webhook config)

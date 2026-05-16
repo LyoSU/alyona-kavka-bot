@@ -3,6 +3,7 @@ import { getCollections } from '@/db/client';
 import { parse } from '@/domain/funnel/callbacks';
 import { renderNode } from '@/domain/funnel/engine';
 import { logger } from '@/lib/logger';
+import { handleLessonPlay, handleLessonsProduct, handleMyLessons } from './lessons';
 
 export async function handleCallback(ctx: BotContext): Promise<void> {
   const data = ctx.callbackQuery?.data;
@@ -41,13 +42,19 @@ export async function handleCallback(ctx: BotContext): Promise<void> {
       await renderNode(ctx.api, chatId, 'welcome');
       return;
     }
+    case 'lessons_product':
+      await handleLessonsProduct(ctx, parsed.product_id);
+      return;
+    case 'lessons_play':
+      await handleLessonPlay(ctx, parsed.lesson_id);
+      return;
+    case 'lessons_root':
+      await handleMyLessons(ctx);
+      return;
     case 'open_product':
     case 'buy':
     case 'support':
-    case 'lessons_product':
-    case 'lessons_play':
-    case 'lessons_root':
-      // wired in later phases (payments, lessons, support)
+      // wired in later phases (payments, support)
       return;
     case 'unknown':
       logger().warn({ data }, 'unknown callback data');
