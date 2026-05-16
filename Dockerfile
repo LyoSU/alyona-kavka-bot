@@ -6,9 +6,11 @@
 FROM node:24-alpine AS builder
 WORKDIR /app
 
-# Install all deps (dev + prod) for bundling
+# Install all deps (dev + prod) for bundling.
+# --include=dev guarantees devDependencies are installed even when the build
+# host injects NODE_ENV=production (Coolify does this automatically).
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 # Copy sources and build
 COPY tsconfig.json tsup.config.ts biome.json ./
