@@ -1,4 +1,6 @@
 import { run } from '@grammyjs/runner';
+import { handleCallback } from '@/bot/handlers/callback-router';
+import { handleStart } from '@/bot/handlers/start';
 import { createBot } from '@/bot/index';
 import { loadEnv } from '@/config/env';
 import { initDb } from '@/db/client';
@@ -20,7 +22,8 @@ async function bootstrap() {
     captureError(error, { update_id: ctx.update.update_id });
   });
 
-  bot.command('start', (ctx) => ctx.reply('Привіт 🙌'));
+  bot.command('start', handleStart);
+  bot.on('callback_query:data', handleCallback);
 
   // Ensure polling mode (drops any leftover webhook config)
   await bot.api.deleteWebhook({ drop_pending_updates: false });
