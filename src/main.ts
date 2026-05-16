@@ -1,3 +1,15 @@
+// Boot marker — printed before any logger init so we can confirm the JS bundle
+// is actually loading inside the container (Coolify pino-logging issues).
+process.stdout.write(`[boot] alyona-bot starting pid=${process.pid} node=${process.version}\n`);
+process.on('uncaughtException', (err) => {
+  process.stdout.write(`[fatal] uncaughtException: ${err?.stack ?? err}\n`);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  process.stdout.write(`[fatal] unhandledRejection: ${(reason as Error)?.stack ?? reason}\n`);
+  process.exit(1);
+});
+
 import { run } from '@grammyjs/runner';
 import { publishCommands } from '@/bot/commands';
 import { handleAdmin } from '@/bot/handlers/admin/menu';
