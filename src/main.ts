@@ -13,7 +13,7 @@ async function bootstrap() {
   await initDb(env.MONGO_URI, env.MONGO_DB_NAME);
   logger().info('db ready');
 
-  const bot = createBot(env.BOT_TOKEN);
+  const bot = createBot(env.BOT_TOKEN, env.OWNER_TG_IDS);
 
   bot.catch(({ error, ctx }) => {
     logger().error({ err: error, update_id: ctx.update.update_id }, 'bot error');

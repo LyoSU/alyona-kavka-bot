@@ -5,8 +5,9 @@ import { apiThrottler } from '@grammyjs/transformer-throttler';
 import { Bot, session } from 'grammy';
 import { getDb } from '@/db/client';
 import type { BotContext, SessionData } from './context';
+import { userMiddleware } from './middlewares/user';
 
-export function createBot(token: string): Bot<BotContext> {
+export function createBot(token: string, ownerIds: number[]): Bot<BotContext> {
   const bot = new Bot<BotContext>(token);
 
   bot.api.config.use(autoRetry({ maxRetryAttempts: 5, maxDelaySeconds: 30 }));
@@ -27,6 +28,7 @@ export function createBot(token: string): Bot<BotContext> {
   );
 
   bot.use(conversations());
+  bot.use(userMiddleware(ownerIds));
 
   return bot;
 }
