@@ -22,6 +22,7 @@ import { initDb } from '@/db/client';
 import { startBroadcastTicker } from '@/domain/broadcasts/ticker';
 import { startSweeper } from '@/domain/delivery/sweeper';
 import { handlePreCheckout, handleSuccessfulPayment } from '@/domain/payments/handlers';
+import { startReconcileLoop } from '@/domain/users/reconcile';
 import { startHealth } from '@/http/server';
 import { logger } from '@/lib/logger';
 import { initSodium } from '@/lib/secrets';
@@ -38,8 +39,21 @@ async function bootstrap() {
   const bot = createBot(env.BOT_TOKEN, env.OWNER_TG_IDS);
 
   bot.catch(({ error, ctx }) => {
-    logger().error({ err: error, update_id: ctx.update.update_id }, 'bot error');
-    captureError(error, { update_id: ctx.update.update_id });
+    logger().error(
+      {
+        err: error,
+        update_id: ctx.update.update_id,
+        chat_id: ctx.chat?.id,
+        from_id: ctx.from?.id,
+        update_kind: Object.keys(ctx.update).find((k) => k !== 'update_id'),
+      },
+      'bot error',
+    );
+    captureError(error, {
+      update_id: ctx.update.update_id,
+      chat_id: ctx.chat?.id,
+      from_id: ctx.from?.id,
+    });
   });
 
   registerAllAdminActions();
@@ -76,18 +90,24 @@ async function bootstrap() {
   bot.on('message', handlePlainMessage);
 
   // Ensure polling mode (drops any leftover webhook config)
-  await bot.api.deleteWebhook({ drop_pending_updates: false });
+  try {
+    await bot.api.deleteWebhook({ drop_pending_updates: false });
+  } catch (err) {
+    logger().warn({ err }, 'deleteWebhook failed — continuing with long-polling anyway');
+  }
   await publishCommands(bot, env.OWNER_TG_IDS);
 
   const { stop: httpStop } = startHealth(env.PORT);
   const runner = run(bot);
   const sweeper = startSweeper(bot.api);
   const broadcastTicker = startBroadcastTicker(bot.api);
+  const reconcile = startReconcileLoop();
   installShutdown({
     runner,
     httpStop: async () => {
       sweeper.stop();
       broadcastTicker.stop();
+      reconcile.stop();
       await httpStop();
     },
   });

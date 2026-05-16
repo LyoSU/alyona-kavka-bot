@@ -1,4 +1,5 @@
 import type { Api } from 'grammy';
+import type { ObjectId } from 'mongodb';
 import { getCollections } from '@/db/client';
 import { notifyDeliveryFailure } from '@/domain/support/notifications';
 import { logger } from '@/lib/logger';
@@ -6,14 +7,23 @@ import { SYSTEM_MESSAGES } from '../../../seed/system-messages';
 
 const MAX_ATTEMPTS = 5;
 const BETWEEN_LESSONS_MS = 1500;
+const PLACEHOLDER_FILE_ID = 'PENDING_UPLOAD';
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
 
-async function deliverDigital(api: Api, user_tg_id: number, product_id: string): Promise<void> {
-  const { products, lessons } = getCollections();
+// Deliver a digital product — idempotent across retries via delivered_lesson_idx.
+// Returns true if all lessons were delivered (outro sent), false if errored mid-stream.
+async function deliverDigital(
+  api: Api,
+  purchase_id: ObjectId,
+  user_tg_id: number,
+  product_id: string,
+  startIdx: number,
+): Promise<void> {
+  const { products, lessons, purchases } = getCollections();
   const product = await products.findOne({ product_id });
   if (!product) throw new Error(`product not found: ${product_id}`);
 
@@ -29,15 +39,18 @@ async function deliverDigital(api: Api, user_tg_id: number, product_id: string):
     return oa - ob;
   });
 
-  for (let i = 0; i < ordered.length; i++) {
+  for (let i = startIdx; i < ordered.length; i++) {
     const l = ordered[i];
     if (!l) continue;
     const fileId = l.video_file_id as string | undefined;
-    if (!fileId || fileId === 'PENDING_UPLOAD') {
+    if (!fileId || fileId === PLACEHOLDER_FILE_ID) {
       throw new Error(`lesson ${l.lesson_id} has no uploaded video`);
     }
     const caption = `📚 Урок ${i + 1}/${ordered.length}: ${l.title}`;
     await api.sendVideo(user_tg_id, fileId, { caption, protect_content: true });
+    // Persist progress AFTER each successful send. If the process crashes mid-stream,
+    // the next sweeper run resumes from i+1.
+    await purchases.updateOne({ _id: purchase_id }, { $set: { delivered_lesson_idx: i + 1 } });
     if (i < ordered.length - 1) await sleep(BETWEEN_LESSONS_MS);
   }
   await api.sendMessage(user_tg_id, SYSTEM_MESSAGES.delivered_outro);
@@ -47,16 +60,21 @@ async function deliverAppointment(
   api: Api,
   user_tg_id: number,
   product_id: string,
-  purchase_id_str: string,
+  purchase_id: ObjectId,
 ): Promise<void> {
-  await getCollections().appointments.insertOne({
-    user_tg_id,
-    product_id,
-    purchase_id: purchase_id_str as never, // ObjectId is set by caller wrapper
-    status: 'new',
-    admin_notes: [],
-    created_at: new Date(),
-  });
+  const { appointments } = getCollections();
+  // Idempotent: skip if appointment already exists for this purchase.
+  const existing = await appointments.findOne({ purchase_id });
+  if (!existing) {
+    await appointments.insertOne({
+      user_tg_id,
+      product_id,
+      purchase_id,
+      status: 'new',
+      admin_notes: [],
+      created_at: new Date(),
+    });
+  }
   await api.sendMessage(user_tg_id, SYSTEM_MESSAGES.payment_success_appointment);
 }
 
@@ -73,6 +91,7 @@ export async function runSweeperOnce(api: Api): Promise<void> {
   for (const p of pending) {
     const productId = p.product_id as string;
     const userId = p.user_tg_id as number;
+    const startIdx = (p.delivered_lesson_idx as number | undefined) ?? 0;
     try {
       const product = await products.findOne({ product_id: productId });
       if (!product) {
@@ -82,9 +101,11 @@ export async function runSweeperOnce(api: Api): Promise<void> {
       }
 
       if (product.type === 'digital') {
-        await deliverDigital(api, userId, productId);
+        if (!p._id) throw new Error('purchase has no _id');
+        await deliverDigital(api, p._id, userId, productId, startIdx);
       } else {
-        await deliverAppointment(api, userId, productId, String(p._id));
+        if (!p._id) throw new Error('purchase has no _id');
+        await deliverAppointment(api, userId, productId, p._id);
       }
 
       await purchases.updateOne(

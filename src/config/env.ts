@@ -32,7 +32,9 @@ const Schema = z.object({
   MONGO_URI: z.string().refine((s) => s.startsWith('mongodb'), 'must start with mongodb'),
   MONGO_DB_NAME: z.string().default('alyona_bot'),
   OWNER_TG_IDS: csvNumber,
-  LIQPAY_PROVIDER_TOKEN: z.string().min(1),
+  // Optional: bot can boot without it. Buy buttons will deny purchase with a
+  // friendly message until the token is set.
+  LIQPAY_PROVIDER_TOKEN: z.string().default(''),
   LIQPAY_TEST_MODE: z
     .string()
     .default('false')
@@ -46,11 +48,22 @@ const Schema = z.object({
 
 export type Env = z.infer<typeof Schema>;
 
+let _env: Env | null = null;
+
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
+  // Memoize: re-parsing on every callback is wasteful and could surface late
+  // misconfigurations mid-request instead of at boot.
+  if (_env && source === process.env) return _env;
   const parsed = Schema.safeParse(source);
   if (!parsed.success) {
     const msg = parsed.error.issues.map((e) => `  ${e.path.join('.')}: ${e.message}`).join('\n');
     throw new Error(`Invalid env:\n${msg}`);
   }
+  if (source === process.env) _env = parsed.data;
   return parsed.data;
+}
+
+// Test-only helper.
+export function _resetEnv(): void {
+  _env = null;
 }

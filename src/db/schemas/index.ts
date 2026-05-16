@@ -1,4 +1,5 @@
 import type { ObjectId } from 'mongodb';
+import type { Button, Chunk } from '@/domain/funnel/types';
 
 export type Permissions = {
   manage_admins: boolean;
@@ -37,8 +38,8 @@ export type FlowNodeDoc = {
   _id?: ObjectId;
   node_id: string;
   segment?: 'first_job' | 'growing' | null;
-  chunks: Array<Record<string, unknown>>;
-  buttons: Array<Record<string, unknown>>;
+  chunks: Chunk[];
+  buttons: Button[];
   updated_at?: Date;
   updated_by_tg_id?: number;
 };
@@ -85,6 +86,9 @@ export type PurchaseDoc = {
   telegram_payment_charge_id: string;
   status: PurchaseStatus;
   delivery_attempts: number;
+  // How many lessons of the digital product have been delivered.
+  // On retry, sweeper resumes from this index instead of re-sending earlier ones.
+  delivered_lesson_idx?: number;
   created_at: Date;
   delivered_at?: Date;
 };

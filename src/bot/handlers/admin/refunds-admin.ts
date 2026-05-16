@@ -17,7 +17,13 @@ async function listPurchases(ctx: BotContext, kind: 'paid' | 'refunded'): Promis
   const c = getCollections();
   const filter =
     kind === 'paid'
-      ? { status: { $in: ['delivered', 'paid_pending_delivery'] as Array<'delivered' | 'paid_pending_delivery'> } }
+      ? {
+          status: {
+            $in: ['delivered', 'paid_pending_delivery'] as Array<
+              'delivered' | 'paid_pending_delivery'
+            >,
+          },
+        }
       : { status: 'refunded' as const };
   const docs = await c.purchases.find(filter).sort({ created_at: -1 }).limit(20).toArray();
 
@@ -115,9 +121,7 @@ async function showPurchase(ctx: BotContext, idStr: string): Promise<void> {
 async function refundFlow(conversation: Conv, ctx: BotContext, idStr: string): Promise<void> {
   if (!ObjectId.isValid(idStr)) return;
   const c = getCollections();
-  const p = await conversation.external(() =>
-    c.purchases.findOne({ _id: new ObjectId(idStr) }),
-  );
+  const p = await conversation.external(() => c.purchases.findOne({ _id: new ObjectId(idStr) }));
   if (!p) {
     await ctx.reply('Покупку не знайдено.');
     return;
@@ -143,10 +147,7 @@ async function refundFlow(conversation: Conv, ctx: BotContext, idStr: string): P
   }
 
   await conversation.external(async () => {
-    await c.purchases.updateOne(
-      { _id: new ObjectId(idStr) },
-      { $set: { status: 'refunded' } },
-    );
+    await c.purchases.updateOne({ _id: new ObjectId(idStr) }, { $set: { status: 'refunded' } });
     // Декремент лічильника + повернення суми в total_spent_uah
     await c.users.updateOne(
       { tg_id: p.user_tg_id },

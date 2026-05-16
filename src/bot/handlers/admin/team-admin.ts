@@ -1,6 +1,7 @@
 import { createConversation } from '@grammyjs/conversations';
 import { InlineKeyboard, Keyboard } from 'grammy';
 import type { BotContext } from '@/bot/context';
+import { loadEnv } from '@/config/env';
 import { getCollections } from '@/db/client';
 import type { Permissions, UserDoc } from '@/db/schemas';
 import { NO_PERMISSIONS } from '@/domain/users/repo';
@@ -217,11 +218,7 @@ export function registerTeamActions(): void {
     prefix: 'a:team',
     perm: 'manage_admins',
     run: async (ctx, rest) => {
-      const ownerIdsRaw = process.env.OWNER_TG_IDS ?? '';
-      const ownerIds = ownerIdsRaw
-        .split(',')
-        .map((s) => Number(s.trim()))
-        .filter((n) => Number.isFinite(n));
+      const ownerIds = loadEnv().OWNER_TG_IDS;
 
       if (rest === '') {
         await listAdmins(ctx);

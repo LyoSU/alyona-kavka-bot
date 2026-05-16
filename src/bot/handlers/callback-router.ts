@@ -83,7 +83,18 @@ export async function handleCallback(ctx: BotContext): Promise<void> {
         await ctx.reply('Продукт не знайдено 🤔');
         return;
       }
+      if (!product.visible) {
+        await ctx.reply('Цей продукт зараз недоступний. Загляни пізніше або напиши /help.');
+        return;
+      }
       const env = loadEnv();
+      if (!env.LIQPAY_PROVIDER_TOKEN) {
+        logger().warn({ product_id: parsed.product_id }, 'buy attempted without LiqPay token');
+        await ctx.reply(
+          '💳 Оплата ще не налаштована. Напиши /help — Альона звʼяжеться найближчим часом.',
+        );
+        return;
+      }
       try {
         await sendProductInvoice({
           api: ctx.api,

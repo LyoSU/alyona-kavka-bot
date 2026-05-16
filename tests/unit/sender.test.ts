@@ -25,10 +25,10 @@ describe('sendChunks', () => {
       { type: 'text', content: 'hello', delay_before_ms: 100 },
       { type: 'text', content: 'world', delay_before_ms: 200 },
     ];
-    await sendChunks(api, 42, chunks, { sleep });
+    await sendChunks(api, 42, chunks, { sleep, noReadPause: true });
     expect(api.sendChatAction).toHaveBeenCalledTimes(2);
     expect(api.sendMessage).toHaveBeenCalledTimes(2);
-    expect(api.sendMessage).toHaveBeenNthCalledWith(1, 42, 'hello', {});
+    expect(api.sendMessage).toHaveBeenNthCalledWith(1, 42, 'hello', { parse_mode: 'HTML' });
     expect(sleep).toHaveBeenCalledWith(100);
     expect(sleep).toHaveBeenCalledWith(200);
   });
@@ -41,9 +41,12 @@ describe('sendChunks', () => {
       { type: 'text', content: 'two', delay_before_ms: 0 },
     ];
     const markup = { inline_keyboard: [[{ text: 'x', callback_data: 'y' }]] } as never;
-    await sendChunks(api, 42, chunks, { sleep, lastReplyMarkup: markup });
-    expect(api.sendMessage).toHaveBeenNthCalledWith(1, 42, 'one', {});
-    expect(api.sendMessage).toHaveBeenNthCalledWith(2, 42, 'two', { reply_markup: markup });
+    await sendChunks(api, 42, chunks, { sleep, lastReplyMarkup: markup, noReadPause: true });
+    expect(api.sendMessage).toHaveBeenNthCalledWith(1, 42, 'one', { parse_mode: 'HTML' });
+    expect(api.sendMessage).toHaveBeenNthCalledWith(2, 42, 'two', {
+      parse_mode: 'HTML',
+      reply_markup: markup,
+    });
   });
 
   it('skips typing for typing_pause chunks', async () => {
@@ -53,7 +56,7 @@ describe('sendChunks', () => {
       { type: 'typing_pause', delay_before_ms: 500 },
       { type: 'text', content: 'after pause', delay_before_ms: 100 },
     ];
-    await sendChunks(api, 42, chunks, { sleep });
+    await sendChunks(api, 42, chunks, { sleep, noReadPause: true });
     expect(api.sendChatAction).toHaveBeenCalledTimes(1); // only for the text chunk
     expect(sleep).toHaveBeenCalledWith(500);
     expect(sleep).toHaveBeenCalledWith(100);
@@ -63,7 +66,7 @@ describe('sendChunks', () => {
     const api = fakeApi();
     const sleep = vi.fn(async () => undefined);
     const chunks: Chunk[] = [{ type: 'video_note', file_id: 'BAAC', delay_before_ms: 100 }];
-    await sendChunks(api, 42, chunks, { sleep });
+    await sendChunks(api, 42, chunks, { sleep, noReadPause: true });
     expect(api.sendChatAction).toHaveBeenCalledWith(42, 'upload_video_note');
     expect(api.sendVideoNote).toHaveBeenCalledWith(42, 'BAAC');
   });
@@ -83,7 +86,7 @@ describe('sendChunks', () => {
       // then abort.
       return calls >= 5;
     };
-    await sendChunks(api, 42, chunks, { sleep, shouldAbort });
+    await sendChunks(api, 42, chunks, { sleep, shouldAbort, noReadPause: true });
     // Verify we stopped before "three"
     const texts = api.sendMessage.mock.calls.map((c) => c[1]);
     expect(texts).not.toContain('three');

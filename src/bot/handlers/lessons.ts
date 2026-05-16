@@ -74,8 +74,17 @@ export async function handleLessonPlay(ctx: BotContext, lesson_id: string): Prom
     return;
   }
 
+  const fileId = lesson.video_file_id as string | undefined;
+  if (!fileId || fileId === 'PENDING_UPLOAD') {
+    logger().warn({ lesson_id }, 'lesson play: video not yet uploaded');
+    await ctx.reply(
+      'Цей урок ще готується 🛠 Альона завантажить відео найближчим часом — повернись пізніше.',
+    );
+    return;
+  }
+
   try {
-    await ctx.api.sendVideo(ctx.chat.id, lesson.video_file_id as string, {
+    await ctx.api.sendVideo(ctx.chat.id, fileId, {
       caption: lesson.caption as string | undefined,
       protect_content: true,
     });

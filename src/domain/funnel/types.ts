@@ -16,6 +16,9 @@ export const ChunkSchema = z.discriminatedUnion('type', [
     type: z.literal('video_note'),
     file_id: z.string().min(1),
     delay_before_ms: z.number().int().min(0).default(0),
+    // Optional duration (seconds) — used to size the post-send "watch it" pause.
+    // If omitted, sender uses a conservative default (~12s).
+    duration_sec: z.number().int().min(1).max(120).optional(),
   }),
   z.object({
     type: z.literal('typing_pause'),

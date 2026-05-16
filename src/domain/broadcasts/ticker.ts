@@ -80,16 +80,14 @@ async function processChunk(api: Api, b: BroadcastDoc): Promise<{ done: boolean 
     return { done: true };
   }
 
-  let sent = 0;
-  let failed = 0;
-  let lastId: ObjectId | undefined;
-
-  for (const u of chunk) {
+  for (let i = 0; i < chunk.length; i++) {
+    const u = chunk[i];
+    if (!u) continue;
+    let ok = false;
     try {
       await sendOne(api, b, u.tg_id);
-      sent++;
+      ok = true;
     } catch (err) {
-      failed++;
       if (isFatalSendError(err)) {
         await users.updateOne({ _id: u._id }, { $set: { blocked: true } });
       } else {
@@ -99,17 +97,16 @@ async function processChunk(api: Api, b: BroadcastDoc): Promise<{ done: boolean 
         );
       }
     }
-    lastId = u._id;
-    if (u !== chunk[chunk.length - 1]) await sleep(BETWEEN_USERS_MS);
+    // Advance cursor + counter PER USER so SIGKILL doesn't replay the chunk.
+    await broadcasts.updateOne(
+      { _id: b._id },
+      {
+        $inc: ok ? { sent_count: 1 } : { failed_count: 1 },
+        $set: { last_processed_user_id: u._id },
+      },
+    );
+    if (i < chunk.length - 1) await sleep(BETWEEN_USERS_MS);
   }
-
-  await broadcasts.updateOne(
-    { _id: b._id },
-    {
-      $inc: { sent_count: sent, failed_count: failed },
-      $set: { last_processed_user_id: lastId },
-    },
-  );
   return { done: false };
 }
 

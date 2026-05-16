@@ -34,6 +34,13 @@ export async function handleInitAdminGroup(ctx: BotContext): Promise<void> {
 export async function handleChatsShared(ctx: BotContext): Promise<void> {
   const shared = ctx.message?.chat_shared;
   if (!shared || shared.request_id !== REQUEST_CHAT_ID) return;
+  // Defense-in-depth: TG only fires this from buttons the bot showed, but guard
+  // anyway — a non-admin must never be able to rebind the CRM group.
+  const u = ctx.state.user;
+  if (!u?.is_admin || !u.permissions.manage_settings) {
+    logger().warn({ tg_id: ctx.from?.id }, 'chat_shared from non-admin — ignored');
+    return;
+  }
   const chatId = shared.chat_id;
 
   try {

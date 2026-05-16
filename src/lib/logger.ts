@@ -11,6 +11,14 @@ const REDACT_PATHS = [
   '*.text',
   'caption',
   '*.caption',
+  'provider_payment_id',
+  '*.provider_payment_id',
+  'provider_payment_charge_id',
+  '*.provider_payment_charge_id',
+  'telegram_payment_charge_id',
+  '*.telegram_payment_charge_id',
+  'phone_number',
+  '*.phone_number',
 ];
 
 export function createLogger(

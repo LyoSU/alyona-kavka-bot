@@ -80,9 +80,7 @@ async function showProduct(ctx: BotContext, product_id: string): Promise<void> {
     } else {
       lessonsBlock =
         `\n\n<b>🎥 Відео уроки:</b> ${okCount}/${lessonsForKb.length} готових\n` +
-        lessonsForKb
-          .map((l) => `${l.ok ? '✅' : '⚠️'} ${escapeHtml(l.title)}`)
-          .join('\n');
+        lessonsForKb.map((l) => `${l.ok ? '✅' : '⚠️'} ${escapeHtml(l.title)}`).join('\n');
     }
   }
 
@@ -106,10 +104,7 @@ async function showProduct(ctx: BotContext, product_id: string): Promise<void> {
     .row();
   if (p.type === 'digital') {
     for (const l of lessonsForKb) {
-      kb.text(
-        `${l.ok ? '🎬' : '⬆️'} ${l.title}`,
-        `a:lessons:l:${l.lesson_id}`,
-      ).row();
+      kb.text(`${l.ok ? '🎬' : '⬆️'} ${l.title}`, `a:lessons:l:${l.lesson_id}`).row();
     }
     kb.text('➕ Додати відео-урок', `a:products:add_lesson:${product_id}`).row();
   }

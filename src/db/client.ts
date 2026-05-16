@@ -1,4 +1,5 @@
-import { type Db, MongoClient } from 'mongodb';
+import { type Db, MongoClient, MongoServerError } from 'mongodb';
+import { logger } from '@/lib/logger';
 import type {
   AppointmentDoc,
   BroadcastDoc,
@@ -51,21 +52,50 @@ export function getCollections() {
   };
 }
 
+async function safeCreateIndex(collName: string, fn: () => Promise<string>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    // IndexOptionsConflict (85) / IndexKeySpecsConflict (86) happen when an
+    // existing index has different options than what we're asking for. Don't
+    // crash boot — log and move on (operator can drop+recreate manually).
+    if (err instanceof MongoServerError && (err.code === 85 || err.code === 86)) {
+      logger().warn(
+        { coll: collName, code: err.code, msg: err.message },
+        'ensureIndexes: existing index has different options — keeping it',
+      );
+      return;
+    }
+    throw err;
+  }
+}
+
 async function ensureIndexes(): Promise<void> {
   const c = getCollections();
   await Promise.all([
-    c.users.createIndex({ tg_id: 1 }, { unique: true }),
-    c.flow_nodes.createIndex({ node_id: 1 }, { unique: true }),
-    c.products.createIndex({ product_id: 1 }, { unique: true }),
-    c.lessons.createIndex({ lesson_id: 1 }, { unique: true }),
-    c.purchases.createIndex({ provider_payment_id: 1 }, { unique: true, sparse: true }),
-    c.purchases.createIndex({ user_tg_id: 1, created_at: -1 }),
-    c.purchases.createIndex({ status: 1 }),
-    c.support_topics.createIndex({ user_tg_id: 1 }, { unique: true }),
-    c.support_topics.createIndex({ thread_id: 1 }),
-    c.events.createIndex({ user_tg_id: 1, at: -1 }),
-    c.events.createIndex({ type: 1, at: -1 }),
-    c.events.createIndex({ at: -1 }),
-    c.broadcasts.createIndex({ status: 1, created_at: 1 }),
+    safeCreateIndex('users', () => c.users.createIndex({ tg_id: 1 }, { unique: true })),
+    safeCreateIndex('flow_nodes', () => c.flow_nodes.createIndex({ node_id: 1 }, { unique: true })),
+    safeCreateIndex('products', () => c.products.createIndex({ product_id: 1 }, { unique: true })),
+    safeCreateIndex('lessons', () => c.lessons.createIndex({ lesson_id: 1 }, { unique: true })),
+    safeCreateIndex('purchases', () =>
+      c.purchases.createIndex({ provider_payment_id: 1 }, { unique: true, sparse: true }),
+    ),
+    safeCreateIndex('purchases', () => c.purchases.createIndex({ user_tg_id: 1, created_at: -1 })),
+    safeCreateIndex('purchases', () => c.purchases.createIndex({ status: 1 })),
+    safeCreateIndex('support_topics', () =>
+      c.support_topics.createIndex({ user_tg_id: 1 }, { unique: true }),
+    ),
+    safeCreateIndex('support_topics', () => c.support_topics.createIndex({ thread_id: 1 })),
+    safeCreateIndex('events', () => c.events.createIndex({ user_tg_id: 1, at: -1 })),
+    safeCreateIndex('events', () => c.events.createIndex({ type: 1, at: -1 })),
+    safeCreateIndex('events', () => c.events.createIndex({ at: -1 })),
+    safeCreateIndex('broadcasts', () => c.broadcasts.createIndex({ status: 1, created_at: 1 })),
+    safeCreateIndex('appointments', () =>
+      c.appointments.createIndex({ purchase_id: 1 }, { unique: true }),
+    ),
+    // TTL: drop events older than 365d to keep collection bounded.
+    safeCreateIndex('events', () =>
+      c.events.createIndex({ at: 1 }, { expireAfterSeconds: 365 * 24 * 3600 }),
+    ),
   ]);
 }

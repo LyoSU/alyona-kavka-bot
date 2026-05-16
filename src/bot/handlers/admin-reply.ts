@@ -12,6 +12,20 @@ export async function handleAdminReply(ctx: BotContext): Promise<void> {
   const settings = await getCollections().settings.findOne({ _id: 'singleton' });
   if (ctx.chat.id !== settings?.admin_group_chat_id) return;
 
+  // Forum-group membership ≠ bot admin in DB. Without this check, anyone added
+  // to the Telegram group could send messages to users impersonating the bot.
+  // Require an explicit `support` permission in our DB.
+  const fromId = ctx.from?.id;
+  if (!fromId) return;
+  const author = await getCollections().users.findOne({ tg_id: fromId });
+  if (!author?.is_admin || !author.permissions.support) {
+    logger().info(
+      { tg_id: fromId, thread_id: ctx.message.message_thread_id },
+      'admin reply: author lacks support permission, ignoring',
+    );
+    return;
+  }
+
   // Skip internal notes
   const text = ctx.message.text;
   const caption = ctx.message.caption;

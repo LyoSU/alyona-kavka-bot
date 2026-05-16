@@ -42,6 +42,11 @@ async function listNodes(ctx: BotContext, page = 0): Promise<void> {
   }
 }
 
+// Universal navigation actions — their labels are shared across the whole funnel
+// and editing them per-node would create inconsistency, so we hide them from the
+// admin "edit buttons" list.
+const NAV_ACTIONS = new Set(['back', 'home', 'support']);
+
 function nodeKeyboard(node: {
   node_id: string;
   chunks: Array<Record<string, unknown>>;
@@ -53,9 +58,16 @@ function nodeKeyboard(node: {
     const preview = t === 'text' ? String(c.content ?? '').slice(0, 24) : t;
     kb.text(`📄 ${idx + 1}. ${t}: ${preview}`, `a:content:edit:${node.node_id}:${idx}`).row();
   });
+  let editableCount = 0;
   node.buttons.forEach((b, idx) => {
+    if (NAV_ACTIONS.has(b.action as string)) return;
+    editableCount++;
     kb.text(`🔘 ${b.label as string}`, `a:content:btn:${node.node_id}:${idx}`).row();
   });
+  if (editableCount === 0 && node.buttons.length > 0) {
+    // Nothing editable but nav buttons exist — give admin a hint.
+    kb.text('ℹ️ На цій ноді лише навігаційні кнопки', 'a:noop').row();
+  }
   kb.text('⬅️ Назад до списку', 'a:content').row();
   return kb;
 }
@@ -67,8 +79,7 @@ async function showNode(ctx: BotContext, node_id: string): Promise<void> {
     return;
   }
   const text =
-    `🧩 <b>${escapeHtml(nodeLabel(node_id))}</b>\n` +
-    `<i>технічний ID:</i> ${code(node_id)}`;
+    `🧩 <b>${escapeHtml(nodeLabel(node_id))}</b>\n` + `<i>технічний ID:</i> ${code(node_id)}`;
   const kb = nodeKeyboard(
     doc as unknown as {
       node_id: string;
@@ -170,12 +181,14 @@ async function editChunkConversation(
     );
     const got = await conversation.waitFor('message:video_note');
     const fileId = got.msg.video_note.file_id;
+    const durationSec = got.msg.video_note.duration;
     await conversation.external(async () => {
       await flow_nodes.updateOne(
         { node_id },
         {
           $set: {
             [`chunks.${chunkIdx}.file_id`]: fileId,
+            [`chunks.${chunkIdx}.duration_sec`]: durationSec,
             updated_at: new Date(),
             updated_by_tg_id: ctx.from?.id,
           },
