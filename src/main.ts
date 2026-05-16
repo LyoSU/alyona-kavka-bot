@@ -40,8 +40,10 @@ async function bootstrap() {
   // First-boot seeding (idempotent): if flow_nodes/products are empty, insert
   // them from the bundled seed/ modules. Pre-existing edits are preserved.
   await bootstrapSeed(env.LIQPAY_TEST_MODE);
+  logger().info('seed ok');
 
   const bot = createBot(env.BOT_TOKEN, env.OWNER_TG_IDS);
+  logger().info('bot composed');
 
   bot.catch(({ error, ctx }) => {
     logger().error(
@@ -94,16 +96,31 @@ async function bootstrap() {
   // user → admin relay (private chat)
   bot.on('message', handlePlainMessage);
 
-  // Ensure polling mode (drops any leftover webhook config)
-  try {
-    await bot.api.deleteWebhook({ drop_pending_updates: false });
-  } catch (err) {
-    logger().warn({ err }, 'deleteWebhook failed — continuing with long-polling anyway');
-  }
-  await publishCommands(bot, env.OWNER_TG_IDS);
+  logger().info('handlers registered');
 
+  // Ensure polling mode (drops any leftover webhook config). Wrap with a
+  // hard timeout: TG outages must not block startup; the runner can poll
+  // even if a stale webhook is set (it'll get cleared on first long-poll).
+  try {
+    await Promise.race([
+      bot.api.deleteWebhook({ drop_pending_updates: false }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('deleteWebhook timeout')), 5000)),
+    ]);
+    logger().info('webhook cleared');
+  } catch (err) {
+    logger().warn({ err }, 'deleteWebhook failed/timed out — continuing');
+  }
+  // publishCommands has its own try/catch; race it with a deadline so it can't
+  // block bootstrap if TG misbehaves.
+  await Promise.race([
+    publishCommands(bot, env.OWNER_TG_IDS),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ]);
+
+  logger().info('starting http + runner');
   const { stop: httpStop } = startHealth(env.PORT);
   const runner = run(bot);
+  logger().info('runner started');
   const sweeper = startSweeper(bot.api);
   const broadcastTicker = startBroadcastTicker(bot.api);
   const reconcile = startReconcileLoop();
