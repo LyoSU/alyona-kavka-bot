@@ -7,6 +7,7 @@ import { getCollections } from '@/db/client';
 import { getCachedUsdRate } from '@/domain/payments/exchange-rate';
 import { code, escapeHtml, italic } from '@/lib/html';
 import { logger } from '@/lib/logger';
+import { waitOrCancel } from './_conv-wait';
 import { registerAdminAction } from './router';
 
 type Conv = Parameters<Parameters<typeof createConversation<BotContext, BotContext>>[0]>[0];
@@ -80,10 +81,11 @@ async function showSettings(ctx: BotContext): Promise<void> {
 async function setSettingFlow(conversation: Conv, ctx: BotContext, key: SettingKey): Promise<void> {
   const { settings, events } = getCollections();
   await ctx.reply(`${PROMPTS[key]}\n\n<i>Або /cancel.</i>`, { parse_mode: 'HTML' });
-  const got = await conversation.waitFor('message:text');
-  const raw = got.msg.text.trim();
-  if (raw === '/cancel' || !raw) {
-    await ctx.reply('Скасовано.');
+  const got = await waitOrCancel(conversation, ctx);
+  if (!got) return;
+  const raw = got.message?.text?.trim();
+  if (!raw) {
+    await ctx.reply('Очікую текст. Надішли текст або /cancel.');
     return;
   }
 

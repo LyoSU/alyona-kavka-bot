@@ -4,6 +4,7 @@ import type { BotContext } from '@/bot/context';
 import { getCollections } from '@/db/client';
 import { bold, code, escapeHtml } from '@/lib/html';
 import { logger } from '@/lib/logger';
+import { waitOrCancel } from './_conv-wait';
 import { registerAdminAction } from './router';
 
 type Conv = Parameters<Parameters<typeof createConversation<BotContext, BotContext>>[0]>[0];
@@ -153,10 +154,11 @@ async function uploadLessonFlow(
   }
 
   await ctx.reply('📝 Як назвати цей урок? (видно юзеру)');
-  const titleMsg = await conversation.waitFor('message:text');
-  const title = titleMsg.msg.text.trim();
-  if (!title || title === '/cancel') {
-    await ctx.reply('Скасовано.');
+  const titleMsg = await waitOrCancel(conversation, ctx);
+  if (!titleMsg) return;
+  const title = titleMsg.message?.text?.trim();
+  if (!title) {
+    await ctx.reply('Очікую текст. Надішли назву уроку або /cancel.');
     return;
   }
 

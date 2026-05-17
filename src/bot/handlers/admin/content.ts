@@ -5,6 +5,7 @@ import { getCollections } from '@/db/client';
 import { nodeLabel } from '@/domain/funnel/labels';
 import { code, escapeHtml, pre } from '@/lib/html';
 import { logger } from '@/lib/logger';
+import { waitOrCancel } from './_conv-wait';
 import { registerAdminAction } from './router';
 
 const PAGE = 10;
@@ -118,10 +119,11 @@ async function editChunkConversation(
       `✏️ Надішли новий <b>текст</b> для чанку #${chunkIdx + 1}:\n\nПоточний:\n${pre(current)}\n\n<i>Або /cancel щоб скасувати.</i>`,
       { parse_mode: 'HTML' },
     );
-    const got = await conversation.waitFor('message:text');
-    const txt = got.msg.text.trim();
-    if (txt === '/cancel') {
-      await ctx.reply('Скасовано.');
+    const got = await waitOrCancel(conversation, ctx);
+    if (!got) return;
+    const txt = got.message?.text?.trim();
+    if (!txt) {
+      await ctx.reply('Очікую текст. Надішли текст або /cancel.');
       return;
     }
     await conversation.external(async () => {
@@ -147,11 +149,12 @@ async function editChunkConversation(
     await ctx.reply(`🖼 Надішли нове <b>фото</b> для чанку #${chunkIdx + 1}, або /cancel.`, {
       parse_mode: 'HTML',
     });
-    const got = await conversation.waitFor('message:photo');
-    const photos = got.msg.photo;
-    const largest = photos[photos.length - 1];
+    const got = await waitOrCancel(conversation, ctx);
+    if (!got) return;
+    const photos = got.message?.photo;
+    const largest = photos?.[photos.length - 1];
     if (!largest) {
-      await ctx.reply('Фото не розпізнано.');
+      await ctx.reply('Очікую саме фото. Надішли фото або /cancel.');
       return;
     }
     const fileId = largest.file_id;
@@ -179,9 +182,15 @@ async function editChunkConversation(
       `🎥 Надішли нове <b>відео-кружок</b> для чанку #${chunkIdx + 1}, або /cancel.`,
       { parse_mode: 'HTML' },
     );
-    const got = await conversation.waitFor('message:video_note');
-    const fileId = got.msg.video_note.file_id;
-    const durationSec = got.msg.video_note.duration;
+    const got = await waitOrCancel(conversation, ctx);
+    if (!got) return;
+    const vn = got.message?.video_note;
+    if (!vn) {
+      await ctx.reply('Очікую саме відео-кружок. Надішли video note або /cancel.');
+      return;
+    }
+    const fileId = vn.file_id;
+    const durationSec = vn.duration;
     await conversation.external(async () => {
       await flow_nodes.updateOne(
         { node_id },
@@ -230,10 +239,11 @@ async function editButtonLabelConversation(
     `✏️ Надішли новий <b>напис</b> для кнопки:\n\nПоточний: ${code(button.label as string)}\n\n<i>Або /cancel.</i>`,
     { parse_mode: 'HTML' },
   );
-  const got = await conversation.waitFor('message:text');
-  const txt = got.msg.text.trim();
-  if (txt === '/cancel' || !txt) {
-    await ctx.reply('Скасовано.');
+  const got = await waitOrCancel(conversation, ctx);
+  if (!got) return;
+  const txt = got.message?.text?.trim();
+  if (!txt) {
+    await ctx.reply('Очікую текст. Надішли текст або /cancel.');
     return;
   }
   await conversation.external(async () => {
