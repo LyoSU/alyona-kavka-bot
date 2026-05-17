@@ -18,7 +18,7 @@ import { handleAdminReply } from '@/bot/handlers/admin-reply';
 import { handleCallback } from '@/bot/handlers/callback-router';
 import { handleChatsShared, handleInitAdminGroup } from '@/bot/handlers/init-admin-group';
 import { handleMyLessons } from '@/bot/handlers/lessons';
-import { handlePlainMessage, handleSupportButton } from '@/bot/handlers/plain-message';
+import { handlePlainMessage } from '@/bot/handlers/plain-message';
 import {
   handleAbout,
   handleDeleteMyData,
@@ -28,7 +28,6 @@ import {
 } from '@/bot/handlers/privacy';
 import { handleStart } from '@/bot/handlers/start';
 import { createBot } from '@/bot/index';
-import { MAIN_REPLY_BTN_LESSONS, MAIN_REPLY_BTN_SUPPORT } from '@/bot/keyboards/main-reply';
 import { loadEnv } from '@/config/env';
 import { initDb } from '@/db/client';
 import { bootstrapSeed } from '@/bootstrap-seed';
@@ -86,8 +85,6 @@ async function bootstrap() {
   bot.command('about', handleAbout);
   bot.command('admin', handleAdmin);
   bot.command('init_admin_group', handleInitAdminGroup);
-  bot.hears(MAIN_REPLY_BTN_LESSONS, handleMyLessons);
-  bot.hears(MAIN_REPLY_BTN_SUPPORT, handleSupportButton);
   bot.on('callback_query:data', handleCallback);
 
   // payments

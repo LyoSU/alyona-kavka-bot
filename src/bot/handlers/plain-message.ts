@@ -1,5 +1,4 @@
 import type { BotContext } from '@/bot/context';
-import { MAIN_REPLY_BTN_LESSONS, MAIN_REPLY_BTN_SUPPORT } from '@/bot/keyboards/main-reply';
 import { supportLimiter } from '@/bot/middlewares/anti-spam';
 import { ensureTopic } from '@/domain/support/topic-manager';
 import { logger } from '@/lib/logger';
@@ -13,7 +12,6 @@ export async function handlePlainMessage(ctx: BotContext): Promise<void> {
   if (ctx.message.users_shared || ctx.message.chat_shared) return;
 
   const text = ctx.message.text;
-  if (text === MAIN_REPLY_BTN_LESSONS || text === MAIN_REPLY_BTN_SUPPORT) return;
   if (typeof text === 'string' && text.startsWith('/')) return;
 
   if (!supportLimiter.allow(ctx.from.id)) {
@@ -45,6 +43,3 @@ export async function handlePlainMessage(ctx: BotContext): Promise<void> {
   }
 }
 
-export async function handleSupportButton(ctx: BotContext): Promise<void> {
-  await ctx.reply(SYSTEM_MESSAGES.help_prompt);
-}

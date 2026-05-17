@@ -1,5 +1,4 @@
 import type { BotContext } from '@/bot/context';
-import { mainReplyKeyboard } from '@/bot/keyboards/main-reply';
 import { getCollections } from '@/db/client';
 import { renderNode } from '@/domain/funnel/engine';
 
@@ -13,8 +12,10 @@ export async function handleStart(ctx: BotContext): Promise<void> {
     { $set: { current_node_id: 'welcome', segment: null } },
   );
 
-  // attach persistent reply keyboard (sticks for the chat lifetime)
-  await ctx.reply('🌟', { reply_markup: mainReplyKeyboard });
+  // Drop any legacy reply keyboard from previous bot version. Telegram has no
+  // silent "remove keyboard" call — we must send a message with the flag, so
+  // we piggy-back it onto a single emoji that doubles as a hello.
+  await ctx.reply('👋', { reply_markup: { remove_keyboard: true } });
 
   const result = await renderNode(ctx.api, ctx.chat.id, 'welcome');
   if (!result.ok) {
