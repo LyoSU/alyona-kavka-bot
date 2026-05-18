@@ -19,11 +19,20 @@ const ADMIN_PRIVATE_COMMANDS = [
 
 export async function publishCommands(bot: Bot<BotContext>, ownerIds: number[]): Promise<void> {
   try {
+    // Default scope (no language_code) — fallback for users whose Telegram
+    // locale is not 'uk'. Same Ukrainian text; we just want everyone to see it.
+    await bot.api.setMyCommands(PRIVATE_COMMANDS);
+    await bot.api.setMyCommands(PRIVATE_COMMANDS, {
+      scope: { type: 'all_private_chats' },
+    });
     await bot.api.setMyCommands(PRIVATE_COMMANDS, {
       scope: { type: 'all_private_chats' },
       language_code: 'uk',
     });
     for (const id of ownerIds) {
+      await bot.api.setMyCommands(ADMIN_PRIVATE_COMMANDS, {
+        scope: { type: 'chat', chat_id: id },
+      });
       await bot.api.setMyCommands(ADMIN_PRIVATE_COMMANDS, {
         scope: { type: 'chat', chat_id: id },
         language_code: 'uk',
